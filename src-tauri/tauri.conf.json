@@ -36,6 +36,11 @@
     ],
     "category": "DeveloperTool",
     "shortDescription": "Cross-platform Ruby version manager",
-    "longDescription": "A GUI tool for installing and managing Ruby versions across macOS, Linux, and Windows."
+    "longDescription": "A GUI tool for installing and managing Ruby versions across macOS, Linux, and Windows.",
+    "macOS": {
+      "entitlements": null,
+      "signingIdentity": null,
+      "providerShortName": null
+    }
   }
 }
