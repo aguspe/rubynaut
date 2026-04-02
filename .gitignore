@@ -7,6 +7,11 @@ src-tauri/gen/
 
 # Node
 node_modules/
+package-lock.json
+
+# Playwright
+test-results/
+playwright-report/
 
 # OS
 .DS_Store

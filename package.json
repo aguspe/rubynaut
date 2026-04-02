@@ -1,0 +1,21 @@
+{
+  "name": "rubynaut",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cross-platform GUI tool for installing and managing Ruby versions",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:ui": "npx playwright test --ui",
+    "test:headed": "npx playwright test --headed",
+    "test:report": "npx playwright show-report"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aguspe/rubynaut.git"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "serve": "^14.2.6"
+  }
+}
