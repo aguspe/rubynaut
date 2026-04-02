@@ -1,0 +1,1453 @@
+/* ============================================
+   Rubynaut — Ruby-themed Design System
+   Colors drawn from the Ruby gemstone palette
+   ============================================ */
+
+:root {
+  /* Ruby core palette */
+  --ruby-900: #4a0012;
+  --ruby-800: #6b0f1a;
+  --ruby-700: #8b1a2b;
+  --ruby-600: #a31432;
+  --ruby-500: #cc1442;
+  --ruby-400: #e0365a;
+  --ruby-300: #f06080;
+  --ruby-200: #f8a0b0;
+  --ruby-100: #fde0e6;
+  --ruby-50:  #fff5f7;
+
+  /* Neutral palette */
+  --slate-900: #0f1419;
+  --slate-800: #1a1f2e;
+  --slate-700: #252b3b;
+  --slate-600: #374151;
+  --slate-500: #6b7280;
+  --slate-400: #9ca3af;
+  --slate-300: #d1d5db;
+  --slate-200: #e5e7eb;
+  --slate-100: #f3f4f6;
+  --slate-50:  #f9fafb;
+
+  /* Semantic */
+  --success: #22c55e;
+  --success-bg: #052e16;
+  --warning: #eab308;
+  --warning-bg: #422006;
+  --error: #ef4444;
+  --error-bg: #450a0a;
+
+  /* Layout */
+  --sidebar-width: 220px;
+  --radius: 8px;
+  --radius-lg: 12px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--slate-900);
+  color: var(--slate-100);
+  overflow: hidden;
+  height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  display: flex;
+  height: 100vh;
+}
+
+/* ============================================
+   Sidebar
+   ============================================ */
+
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--slate-800);
+  border-right: 1px solid var(--slate-700);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 18px;
+  border-bottom: 1px solid var(--slate-700);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.logo-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  filter: drop-shadow(0 0 6px rgba(204, 20, 66, 0.3));
+}
+
+.logo h1 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--slate-50);
+  letter-spacing: -0.02em;
+}
+
+.nav-links {
+  list-style: none;
+  padding: 12px 8px;
+  flex: 1;
+}
+
+.nav-links li {
+  margin-bottom: 2px;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  color: var(--slate-400);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.nav-link:hover {
+  background: var(--slate-700);
+  color: var(--slate-100);
+}
+
+.nav-link.active {
+  background: var(--ruby-900);
+  color: var(--ruby-300);
+  border: 1px solid rgba(204, 20, 66, 0.3);
+}
+
+.nav-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.sidebar-footer {
+  padding: 14px 18px;
+  border-top: 1px solid var(--slate-700);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.platform-badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 99px;
+  background: var(--slate-700);
+  color: var(--slate-400);
+  font-weight: 500;
+}
+
+.version-label {
+  font-size: 11px;
+  color: var(--slate-500);
+}
+
+/* ============================================
+   Main Content
+   ============================================ */
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px;
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.tab-header {
+  margin-bottom: 28px;
+}
+
+.tab-header h2 {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--slate-50);
+  margin-bottom: 4px;
+}
+
+.tab-subtitle {
+  font-size: 14px;
+  color: var(--slate-500);
+}
+
+/* ============================================
+   Stat Cards
+   ============================================ */
+
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.stat-card {
+  background: var(--slate-800);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  text-align: center;
+}
+
+.stat-card.accent {
+  background: linear-gradient(135deg, var(--ruby-900), var(--slate-800));
+  border-color: rgba(204, 20, 66, 0.3);
+}
+
+.stat-number {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--slate-50);
+  line-height: 1.2;
+}
+
+.stat-card.accent .stat-number {
+  color: var(--ruby-300);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--slate-500);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+
+/* ============================================
+   Section Headers
+   ============================================ */
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.section-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--slate-200);
+}
+
+/* ============================================
+   Version List (Dashboard)
+   ============================================ */
+
+.version-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.version-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--slate-800);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  transition: border-color 0.15s ease;
+}
+
+.version-item:hover {
+  border-color: var(--slate-600);
+}
+
+.version-item.active-version {
+  border-color: var(--ruby-600);
+  background: linear-gradient(135deg, rgba(204, 20, 66, 0.08), var(--slate-800));
+}
+
+.version-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.version-number {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--slate-100);
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+}
+
+.version-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.badge-active {
+  background: var(--ruby-800);
+  color: var(--ruby-200);
+  border: 1px solid var(--ruby-600);
+}
+
+.badge-global {
+  background: var(--slate-700);
+  color: var(--slate-300);
+}
+
+.version-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ============================================
+   Version Grid (Install)
+   ============================================ */
+
+.version-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.version-card {
+  background: var(--slate-800);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.15s ease;
+}
+
+.version-card:hover {
+  border-color: var(--slate-600);
+  transform: translateY(-1px);
+}
+
+.version-card.installed {
+  border-color: var(--ruby-700);
+  background: linear-gradient(135deg, rgba(204, 20, 66, 0.06), var(--slate-800));
+}
+
+.version-card .version-number {
+  font-size: 20px;
+}
+
+.version-card .version-badge {
+  font-size: 11px;
+}
+
+.badge-installed {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.version-block {
+  margin-bottom: 4px;
+}
+
+.inline-panel:empty {
+  display: none;
+}
+
+.inline-panel-content {
+  background: var(--slate-800);
+  border: 1px solid var(--slate-700);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  padding: 16px 18px;
+  animation: fadeIn 0.2s ease;
+}
+
+.version-badges {
+  display: flex;
+  gap: 6px;
+}
+
+/* ============================================
+   Version Dropdown Menu
+   ============================================ */
+
+.version-dropdown {
+  position: relative;
+}
+
+.version-switch-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--slate-800);
+  border: 1px solid var(--slate-600);
+  border-radius: var(--radius);
+  min-width: 240px;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: fadeIn 0.15s ease;
+  overflow: hidden;
+}
+
+.dropdown-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: var(--slate-200);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease;
+}
+
+.dropdown-item:hover {
+  background: var(--slate-700);
+}
+
+.dropdown-item + .dropdown-item {
+  border-top: 1px solid var(--slate-700);
+}
+
+.dropdown-hint {
+  width: 100%;
+  font-size: 11px;
+  color: var(--slate-500);
+  margin-left: 22px;
+}
+
+.badge-prebuilt {
+  background: var(--slate-700);
+  color: var(--slate-400);
+}
+
+/* ============================================
+   Gems Panel
+   ============================================ */
+
+.gems-panel {
+  margin-top: 24px;
+  background: var(--slate-800);
+  border: 1px solid var(--ruby-700);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  animation: fadeIn 0.2s ease;
+}
+
+.gems-install-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.gems-install-row .text-input {
+  flex: 1;
+}
+
+.gems-install-row .gem-version-field {
+  flex: 0 0 140px;
+  min-width: 140px;
+}
+
+.gems-filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.text-input {
+  background: var(--slate-700);
+  color: var(--slate-200);
+  border: 1px solid var(--slate-600);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 13px;
+  flex: 1;
+  min-width: 180px;
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: var(--ruby-500);
+}
+
+.text-input::placeholder {
+  color: var(--slate-500);
+}
+
+.filter-label {
+  font-size: 13px;
+  color: var(--slate-400);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.filter-label input[type="checkbox"] {
+  accent-color: var(--ruby-500);
+}
+
+.gems-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.gem-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--slate-900);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+
+.gem-item:hover {
+  border-color: var(--slate-600);
+}
+
+.gem-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--slate-200);
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+}
+
+.gem-version {
+  font-size: 12px;
+  color: var(--slate-500);
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+}
+
+.gem-badge-default {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: var(--slate-700);
+  color: var(--slate-400);
+  margin-left: 8px;
+}
+
+.gem-badge-user {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: rgba(204, 20, 66, 0.15);
+  color: var(--ruby-300);
+  margin-left: 8px;
+}
+
+.gem-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gem-remove-btn {
+  background: none;
+  border: none;
+  color: var(--slate-600);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.gem-remove-btn:hover {
+  color: var(--error);
+  background: var(--error-bg);
+}
+
+.gems-count {
+  font-size: 12px;
+  color: var(--slate-500);
+  margin-bottom: 12px;
+}
+
+/* ============================================
+   Buttons
+   ============================================ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--ruby-600);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--ruby-500);
+}
+
+.btn-secondary {
+  background: var(--slate-700);
+  color: var(--slate-200);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--slate-600);
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--slate-400);
+  border: 1px solid var(--slate-700);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--error-bg);
+  color: var(--error);
+  border-color: var(--error);
+}
+
+.btn-small {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--slate-400);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  color: var(--slate-100);
+  background: var(--slate-700);
+}
+
+.btn-ghost-active {
+  color: var(--ruby-300) !important;
+  background: var(--ruby-900) !important;
+  border: 1px solid rgba(204, 20, 66, 0.3);
+}
+
+/* ============================================
+   Progress Bar
+   ============================================ */
+
+.progress-container {
+  background: var(--slate-800);
+  border: 1px solid var(--ruby-700);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+#install-progress-stage {
+  color: var(--slate-200);
+}
+
+#install-progress-percent {
+  color: var(--ruby-300);
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+.progress-bar {
+  height: 8px;
+  background: var(--slate-700);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--ruby-700), var(--ruby-500));
+  border-radius: 99px;
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+.progress-message {
+  font-size: 12px;
+  color: var(--slate-500);
+  margin-top: 8px;
+}
+
+/* ============================================
+   Projects
+   ============================================ */
+
+.project-open-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  background: var(--slate-800);
+  border: 2px dashed var(--slate-600);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  transition: border-color 0.15s ease;
+}
+
+.project-open-area:hover {
+  border-color: var(--ruby-500);
+}
+
+.btn-large {
+  padding: 14px 28px;
+  font-size: 15px;
+  border-radius: var(--radius-lg);
+}
+
+.project-open-hint {
+  font-size: 13px;
+  color: var(--slate-500);
+  margin-top: 12px;
+}
+
+.project-open-hint code {
+  background: var(--slate-700);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--ruby-300);
+}
+
+.project-result {
+  margin-top: 20px;
+}
+
+.project-card {
+  background: var(--slate-800);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  animation: fadeIn 0.2s ease;
+}
+
+.project-card-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.project-card-icon {
+  width: 44px;
+  height: 44px;
+  background: var(--ruby-900);
+  border: 1px solid var(--ruby-700);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.project-card-icon svg {
+  color: var(--ruby-400);
+}
+
+.project-card-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--slate-50);
+}
+
+.project-card-path {
+  font-size: 12px;
+  color: var(--slate-500);
+  font-family: "SF Mono", "Fira Code", monospace;
+  margin-top: 2px;
+}
+
+.project-detail-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.project-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--slate-900);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius);
+}
+
+.project-detail-row.success {
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.project-detail-row.warning {
+  border-color: rgba(234, 179, 8, 0.3);
+}
+
+.project-detail-row.missing {
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.project-detail-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.project-detail-content {
+  flex: 1;
+}
+
+.project-detail-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--slate-200);
+}
+
+.project-detail-value {
+  font-size: 12px;
+  color: var(--slate-500);
+  margin-top: 1px;
+}
+
+.project-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tracked-projects-section {
+  margin-top: 28px;
+}
+
+.tracked-projects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tracked-project-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--slate-800);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  transition: border-color 0.15s ease;
+}
+
+.tracked-project-item:hover {
+  border-color: var(--slate-600);
+}
+
+.tracked-project-item.folder-missing {
+  opacity: 0.5;
+  border-style: dashed;
+}
+
+.tracked-project-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.tracked-project-icon {
+  width: 36px;
+  height: 36px;
+  background: var(--slate-700);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tracked-project-item:not(.folder-missing) .tracked-project-icon {
+  background: var(--ruby-900);
+}
+
+.tracked-project-icon svg {
+  color: var(--ruby-400);
+  width: 18px;
+  height: 18px;
+}
+
+.folder-missing .tracked-project-icon svg {
+  color: var(--slate-500);
+}
+
+.tracked-project-details {
+  min-width: 0;
+}
+
+.tracked-project-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--slate-100);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tracked-project-path {
+  font-size: 11px;
+  color: var(--slate-500);
+  font-family: "SF Mono", "Fira Code", monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+}
+
+.tracked-project-version {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin: 0 16px;
+}
+
+.tracked-project-version-number {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--slate-200);
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+.tracked-project-source {
+  font-size: 10px;
+  color: var(--slate-500);
+}
+
+.tracked-project-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.badge-ready {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.badge-missing-ruby {
+  background: var(--error-bg);
+  color: var(--error);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.badge-no-version {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.tracked-project-block {
+  margin-bottom: 4px;
+}
+
+.project-inline-panel:empty {
+  display: none;
+}
+
+.bundle-log {
+  background: var(--slate-900);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.bundle-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--slate-400);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.bundle-output {
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 11px;
+  color: var(--slate-300);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 250px;
+  overflow-y: auto;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.project-gems-header {
+  font-size: 12px;
+  color: var(--slate-500);
+  margin-bottom: 10px;
+}
+
+.badge-folder-gone {
+  background: var(--slate-700);
+  color: var(--slate-500);
+}
+
+/* ============================================
+   Doctor
+   ============================================ */
+
+.doctor-actions {
+  margin-bottom: 24px;
+}
+
+.doctor-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.doctor-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--slate-800);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+}
+
+.doctor-item .btn {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.doctor-icon {
+  font-size: 18px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.doctor-icon.ok { color: var(--success); }
+.doctor-icon.warning { color: var(--warning); }
+.doctor-icon.error { color: var(--error); }
+
+.doctor-body {
+  flex: 1;
+}
+
+.doctor-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--slate-100);
+}
+
+.doctor-message {
+  font-size: 13px;
+  color: var(--slate-400);
+  margin-top: 2px;
+}
+
+.doctor-hint {
+  font-size: 12px;
+  color: var(--ruby-300);
+  margin-top: 4px;
+  font-style: italic;
+}
+
+/* ============================================
+   Settings
+   ============================================ */
+
+.settings-section {
+  background: var(--slate-800);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 16px;
+}
+
+.settings-section h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--slate-100);
+  margin-bottom: 8px;
+}
+
+.settings-description {
+  font-size: 13px;
+  color: var(--slate-400);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.settings-description code {
+  background: var(--slate-700);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--ruby-300);
+}
+
+.shell-hook-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.shell-hook-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--slate-900);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+}
+
+.shell-hook-item.installed {
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.shell-hook-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.shell-hook-icon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+
+.shell-hook-icon.ok { color: var(--success); }
+.shell-hook-icon.missing { color: var(--slate-500); }
+
+.shell-hook-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--slate-200);
+}
+
+.shell-hook-file {
+  font-size: 12px;
+  color: var(--slate-500);
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+.shell-hook-manual {
+  border-top: 1px solid var(--slate-700);
+  padding-top: 16px;
+}
+
+.shell-hook-manual h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--slate-400);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.shell-hook-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.select-input {
+  background: var(--slate-700);
+  color: var(--slate-200);
+  border: 1px solid var(--slate-600);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 13px;
+  appearance: none;
+  cursor: pointer;
+  min-width: 200px;
+}
+
+.select-input:focus {
+  outline: none;
+  border-color: var(--ruby-500);
+}
+
+.code-preview {
+  background: var(--slate-900);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-top: 16px;
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 12px;
+  color: var(--slate-300);
+  overflow-x: auto;
+  white-space: pre;
+  line-height: 1.5;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.about-info {
+  font-size: 14px;
+  color: var(--slate-400);
+  line-height: 1.8;
+}
+
+.about-info strong {
+  color: var(--slate-100);
+}
+
+.about-links {
+  margin-top: 8px;
+}
+
+.link {
+  color: var(--ruby-400);
+  text-decoration: none;
+}
+
+.link:hover {
+  color: var(--ruby-300);
+  text-decoration: underline;
+}
+
+/* ============================================
+   Empty & Loading States
+   ============================================ */
+
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--slate-500);
+}
+
+.empty-gem {
+  font-size: 48px;
+  color: var(--slate-600);
+  margin-bottom: 12px;
+}
+
+.empty-gem img {
+  width: 64px;
+  height: 64px;
+  opacity: 0.4;
+}
+
+.empty-state p {
+  margin-bottom: 16px;
+}
+
+.loading-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--slate-500);
+  grid-column: 1 / -1;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--slate-700);
+  border-top-color: var(--ruby-500);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 12px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   Toast Notifications
+   ============================================ */
+
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1000;
+}
+
+.toast {
+  padding: 12px 18px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  animation: slideUp 0.2s ease;
+  max-width: 360px;
+}
+
+.toast-success {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.toast-error {
+  background: var(--error-bg);
+  color: var(--error);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.toast-info {
+  background: var(--slate-800);
+  color: var(--slate-200);
+  border: 1px solid var(--slate-700);
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================
+   Utility
+   ============================================ */
+
+.hidden {
+  display: none !important;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--slate-900);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--slate-700);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--slate-600);
+}
+
+/* ============================================
+   Confirm Dialog
+   ============================================ */
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  animation: fadeIn 0.15s ease;
+}
+
+.dialog {
+  background: var(--slate-800);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+}
+
+.dialog h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--slate-100);
+  margin-bottom: 8px;
+}
+
+.dialog p {
+  font-size: 14px;
+  color: var(--slate-400);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

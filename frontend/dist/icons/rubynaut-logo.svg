@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- Ruby gradient -->
+    <linearGradient id="rubyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#e0365a"/>
+      <stop offset="50%" style="stop-color:#cc1442"/>
+      <stop offset="100%" style="stop-color:#8b1a2b"/>
+    </linearGradient>
+    <!-- Ruby shine -->
+    <linearGradient id="rubyShine" x1="0%" y1="0%" x2="50%" y2="50%">
+      <stop offset="0%" style="stop-color:#ff6b8a;stop-opacity:0.6"/>
+      <stop offset="100%" style="stop-color:#cc1442;stop-opacity:0"/>
+    </linearGradient>
+    <!-- Helmet visor gradient -->
+    <linearGradient id="visorGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#a8d8ff;stop-opacity:0.9"/>
+      <stop offset="40%" style="stop-color:#4a9eff;stop-opacity:0.7"/>
+      <stop offset="100%" style="stop-color:#1a3a6a;stop-opacity:0.85"/>
+    </linearGradient>
+    <!-- Visor reflection -->
+    <linearGradient id="visorReflect" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.5"/>
+      <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0"/>
+    </linearGradient>
+    <!-- Helmet gradient -->
+    <linearGradient id="helmetGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f0f0f0"/>
+      <stop offset="100%" style="stop-color:#c8c8c8"/>
+    </linearGradient>
+    <!-- Star glow -->
+    <radialGradient id="starGlow">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.8"/>
+      <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0"/>
+    </radialGradient>
+    <!-- Circular clip -->
+    <clipPath id="circleClip">
+      <circle cx="256" cy="256" r="256"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#circleClip)">
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="256" fill="#1a1f2e"/>
+
+  <!-- Small stars in background -->
+  <circle cx="80" cy="100" r="2.5" fill="white" opacity="0.7"/>
+  <circle cx="420" cy="80" r="2" fill="white" opacity="0.5"/>
+  <circle cx="440" cy="200" r="3" fill="white" opacity="0.6"/>
+  <circle cx="70" cy="380" r="2" fill="white" opacity="0.4"/>
+  <circle cx="130" cy="180" r="1.5" fill="white" opacity="0.6"/>
+  <circle cx="400" cy="400" r="2" fill="white" opacity="0.5"/>
+  <circle cx="350" cy="120" r="1.5" fill="white" opacity="0.7"/>
+  <circle cx="100" cy="300" r="2" fill="white" opacity="0.3"/>
+
+  <!-- Ruby body (gemstone shape) -->
+  <g transform="translate(256, 280)">
+    <!-- Main ruby gem shape -->
+    <polygon points="0,-140 120,-60 100,80 -100,80 -120,-60"
+             fill="url(#rubyGrad)" stroke="#6b0f1a" stroke-width="3"/>
+    <!-- Top facet (lighter) -->
+    <polygon points="0,-140 120,-60 0,-20 -120,-60"
+             fill="url(#rubyShine)"/>
+    <!-- Left facet -->
+    <polygon points="-120,-60 0,-20 -100,80"
+             fill="#a31432" opacity="0.7"/>
+    <!-- Right facet -->
+    <polygon points="120,-60 0,-20 100,80"
+             fill="#8b1a2b" opacity="0.8"/>
+    <!-- Center facet line -->
+    <line x1="0" y1="-20" x2="0" y2="80" stroke="#6b0f1a" stroke-width="1.5" opacity="0.4"/>
+  </g>
+
+  <!-- Astronaut helmet (over the top of the ruby) -->
+  <g transform="translate(256, 190)">
+    <!-- Helmet outer shell -->
+    <ellipse cx="0" cy="0" rx="95" ry="85" fill="url(#helmetGrad)" stroke="#aaa" stroke-width="3"/>
+
+    <!-- Helmet ring/collar -->
+    <ellipse cx="0" cy="68" rx="80" ry="18" fill="#ddd" stroke="#bbb" stroke-width="2"/>
+
+    <!-- Visor (glass area) -->
+    <ellipse cx="0" cy="-2" rx="72" ry="60" fill="url(#visorGrad)" stroke="#7ab" stroke-width="2.5"/>
+
+    <!-- Visor reflection streak -->
+    <ellipse cx="-18" cy="-18" rx="40" ry="30" fill="url(#visorReflect)" transform="rotate(-15)"/>
+
+    <!-- Small Ruby reflection in visor -->
+    <polygon points="0,10 8,18 5,28 -5,28 -8,18"
+             fill="#cc1442" opacity="0.3" transform="translate(20, -10) scale(0.8)"/>
+
+    <!-- Helmet side details -->
+    <circle cx="-80" cy="10" r="12" fill="#ddd" stroke="#bbb" stroke-width="2"/>
+    <circle cx="-80" cy="10" r="6" fill="#aaa"/>
+    <circle cx="80" cy="10" r="12" fill="#ddd" stroke="#bbb" stroke-width="2"/>
+    <circle cx="80" cy="10" r="6" fill="#aaa"/>
+
+    <!-- Antenna -->
+    <line x1="40" y1="-75" x2="55" y2="-110" stroke="#ccc" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="55" cy="-113" r="7" fill="#e0365a"/>
+    <circle cx="55" cy="-113" r="4" fill="#ff6b8a" opacity="0.7"/>
+  </g>
+  </g>
+</svg>

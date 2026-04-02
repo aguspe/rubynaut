@@ -1,0 +1,966 @@
+// ============================================
+// Rubynaut — Frontend Application
+// ============================================
+
+// Tauri IPC — accessed lazily since __TAURI__ is injected async
+function invoke(...args) {
+  return window.__TAURI__.core.invoke(...args);
+}
+function listen(...args) {
+  return window.__TAURI__.event.listen(...args);
+}
+
+// ============================================
+// Navigation
+// ============================================
+
+function switchTab(tabName) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
+
+  document.getElementById(`tab-${tabName}`).classList.add('active');
+  document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+
+  if (tabName === 'dashboard') refreshDashboard();
+  if (tabName === 'install') refreshAvailable();
+  if (tabName === 'projects') refreshTrackedProjects();
+  if (tabName === 'settings') refreshShellHookStatus();
+}
+
+document.querySelectorAll('.nav-link').forEach(link => {
+  link.addEventListener('click', (e) => {
+    e.preventDefault();
+    switchTab(link.dataset.tab);
+  });
+});
+
+// ============================================
+// Toast Notifications
+// ============================================
+
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 4000);
+}
+
+// ============================================
+// Confirm Dialog
+// ============================================
+
+function showConfirm(title, message) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+    overlay.innerHTML = `
+      <div class="dialog">
+        <h3>${title}</h3>
+        <p>${message}</p>
+        <div class="dialog-actions">
+          <button class="btn btn-secondary" id="dialog-cancel">Cancel</button>
+          <button class="btn btn-danger" id="dialog-confirm">Confirm</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('#dialog-cancel').onclick = () => {
+      overlay.remove();
+      resolve(false);
+    };
+    overlay.querySelector('#dialog-confirm').onclick = () => {
+      overlay.remove();
+      resolve(true);
+    };
+  });
+}
+
+// ============================================
+// Platform Detection
+// ============================================
+
+async function detectPlatform() {
+  try {
+    const info = await invoke('detect_platform');
+    const badge = document.getElementById('platform-badge');
+    const osName = { macos: 'macOS', linux: 'Linux', windows: 'Windows' }[info.os] || info.os;
+    const archName = { aarch64: 'ARM64', x86_64: 'x64' }[info.arch] || info.arch;
+    badge.textContent = `${osName} ${archName}`;
+
+    if (info.existing_ruby_managers.length > 0) {
+      showToast(`Other Ruby managers detected: ${info.existing_ruby_managers.join(', ')}. Check Doctor for details.`, 'info');
+    }
+  } catch (e) {
+    console.error('Platform detection failed:', e);
+  }
+}
+
+// ============================================
+// Dashboard
+// ============================================
+
+// Track which panel is open per version: null, 'gems', or 'projects'
+let openPanels = {};
+
+async function refreshDashboard() {
+  try {
+    const [installed, active, available] = await Promise.all([
+      invoke('get_installed_rubies'),
+      invoke('get_active_version'),
+      invoke('get_available_rubies'),
+    ]);
+
+    document.getElementById('stat-installed').textContent = installed.length;
+    document.getElementById('stat-active').textContent = active || '—';
+    document.getElementById('stat-available').textContent = available.filter(v => !v.installed).length;
+
+    const list = document.getElementById('installed-list');
+
+    if (installed.length === 0) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-gem"><img src="icons/rubynaut-logo.svg" alt=""></div>
+          <p>No Ruby versions installed yet</p>
+          <button class="btn btn-primary" onclick="switchTab('install')">Install Ruby</button>
+        </div>
+      `;
+      return;
+    }
+
+    list.innerHTML = installed.map(ruby => `
+      <div class="version-block" id="version-block-${ruby.version}">
+        <div class="version-item ${ruby.active ? 'active-version' : ''}">
+          <div class="version-info">
+            <span class="version-number">${ruby.version}</span>
+            <div class="version-badges">
+              ${ruby.active ? '<span class="version-badge badge-active">Active</span>' : ''}
+              ${ruby.version === active ? '<span class="version-badge badge-global">Global</span>' : ''}
+            </div>
+          </div>
+          <div class="version-actions">
+            <button class="btn btn-small btn-ghost ${openPanels[ruby.version] === 'gems' ? 'btn-ghost-active' : ''}" onclick="togglePanel('${ruby.version}', 'gems')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5"/></svg>
+              Gems
+            </button>
+            <button class="btn btn-small btn-ghost ${openPanels[ruby.version] === 'projects' ? 'btn-ghost-active' : ''}" onclick="togglePanel('${ruby.version}', 'projects')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              Projects
+            </button>
+            <div class="version-dropdown">
+              <button class="btn btn-small btn-secondary version-switch-btn" onclick="toggleVersionMenu('${ruby.version}')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                Use
+              </button>
+              <div class="dropdown-menu hidden" id="menu-${ruby.version}">
+                <button class="dropdown-item" onclick="setGlobal('${ruby.version}')">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                  Set as Global Default
+                  <span class="dropdown-hint">Used in all terminals</span>
+                </button>
+                <button class="dropdown-item" onclick="promptSetLocal('${ruby.version}')">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                  Set as Local (Project)
+                  <span class="dropdown-hint">Writes .ruby-version file</span>
+                </button>
+              </div>
+            </div>
+            <button class="btn btn-small btn-danger" onclick="uninstallRuby('${ruby.version}')">Remove</button>
+          </div>
+        </div>
+        <div class="inline-panel" id="panel-${ruby.version}"></div>
+      </div>
+    `).join('');
+
+    // Re-open any panels that were open before refresh
+    for (const [version, panelType] of Object.entries(openPanels)) {
+      if (panelType) loadPanel(version, panelType);
+    }
+  } catch (e) {
+    console.error('Dashboard refresh failed:', e);
+    showToast('Failed to load dashboard', 'error');
+  }
+}
+
+function togglePanel(version, panelType) {
+  const current = openPanels[version];
+  if (current === panelType) {
+    // Close the panel
+    openPanels[version] = null;
+    const panel = document.getElementById(`panel-${version}`);
+    if (panel) panel.innerHTML = '';
+    // Update button states
+    updatePanelButtons(version);
+  } else {
+    // Open the requested panel (closes any other)
+    openPanels[version] = panelType;
+    loadPanel(version, panelType);
+    updatePanelButtons(version);
+  }
+}
+
+function updatePanelButtons(version) {
+  const block = document.getElementById(`version-block-${version}`);
+  if (!block) return;
+  block.querySelectorAll('.btn-ghost').forEach(btn => {
+    btn.classList.remove('btn-ghost-active');
+  });
+  const activeType = openPanels[version];
+  if (activeType) {
+    // Find the button that matches
+    const buttons = block.querySelectorAll('.version-actions > .btn-ghost');
+    buttons.forEach(btn => {
+      if (btn.textContent.trim().toLowerCase().includes(activeType)) {
+        btn.classList.add('btn-ghost-active');
+      }
+    });
+  }
+}
+
+async function loadPanel(version, panelType) {
+  const panel = document.getElementById(`panel-${version}`);
+  if (!panel) return;
+
+  if (panelType === 'gems') {
+    panel.innerHTML = '<div class="inline-panel-content"><div class="loading-state"><div class="spinner"></div><p>Loading gems...</p></div></div>';
+    try {
+      currentGemsVersion = version;
+      currentGemsData = await invoke('get_gems_for_version', { version });
+      renderInlineGems(panel, version, currentGemsData);
+    } catch (e) {
+      panel.innerHTML = `<div class="inline-panel-content"><p style="color:var(--slate-500)">Failed to load gems: ${e}</p></div>`;
+    }
+  } else if (panelType === 'projects') {
+    panel.innerHTML = '<div class="inline-panel-content"><div class="loading-state"><div class="spinner"></div><p>Loading projects...</p></div></div>';
+    try {
+      const allProjects = await invoke('get_tracked_projects');
+      const versionProjects = allProjects.filter(p => p.detected_version === version);
+      renderInlineProjects(panel, version, versionProjects);
+    } catch (e) {
+      panel.innerHTML = `<div class="inline-panel-content"><p style="color:var(--slate-500)">Failed to load projects: ${e}</p></div>`;
+    }
+  }
+}
+
+function renderInlineGems(panel, version, gems) {
+  const defaultCount = gems.filter(g => g.is_default).length;
+  const userCount = gems.filter(g => !g.is_default).length;
+
+  panel.innerHTML = `
+    <div class="inline-panel-content">
+      <div class="gems-install-row">
+        <input type="text" id="gem-install-input" class="text-input" placeholder="Gem name..." onkeydown="if(event.key==='Enter')installGemFromInput()">
+        <input type="text" id="gem-version-input" class="text-input gem-version-field" placeholder="Version (optional)" onkeydown="if(event.key==='Enter')installGemFromInput()">
+        <button class="btn btn-primary btn-small" id="gem-install-btn" onclick="installGemFromInput()">Install</button>
+      </div>
+      <div class="gems-filters">
+        <input type="text" id="gems-search" class="text-input" placeholder="Filter gems..." oninput="filterGems()">
+        <label class="filter-label">
+          <input type="checkbox" id="gems-show-default" checked onchange="filterGems()"> Default (${defaultCount})
+        </label>
+        <label class="filter-label">
+          <input type="checkbox" id="gems-show-user" checked onchange="filterGems()"> User (${userCount})
+        </label>
+      </div>
+      <div id="gems-list" class="gems-list">
+        ${gems.length === 0
+          ? '<div class="empty-state" style="grid-column:1/-1;padding:24px"><p>No gems found</p></div>'
+          : gems.map(gem => `
+            <div class="gem-item">
+              <div>
+                <span class="gem-name">${gem.name}</span>
+                <span class="${gem.is_default ? 'gem-badge-default' : 'gem-badge-user'}">${gem.is_default ? 'default' : 'user'}</span>
+              </div>
+              <div class="gem-right">
+                <span class="gem-version">${gem.version}</span>
+                ${!gem.is_default ? `<button class="gem-remove-btn" onclick="removeGem('${gem.name}')" title="Uninstall">&#10005;</button>` : ''}
+              </div>
+            </div>
+          `).join('')
+        }
+      </div>
+    </div>
+  `;
+}
+
+function renderInlineProjects(panel, version, projects) {
+  const folderSvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+
+  if (projects.length === 0) {
+    panel.innerHTML = `
+      <div class="inline-panel-content">
+        <div class="empty-state" style="padding:24px">
+          <p>No projects using Ruby ${version}</p>
+          <p style="font-size:12px;color:var(--slate-500);margin-top:4px">Open a project folder in the Projects tab to track it</p>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="inline-panel-content">
+      ${projects.map(p => {
+        const shortPath = p.path.replace(/^\/Users\/[^/]+/, '~');
+        return `
+          <div class="tracked-project-item ${!p.folder_exists ? 'folder-missing' : ''}">
+            <div class="tracked-project-info">
+              <div class="tracked-project-icon">${folderSvg}</div>
+              <div class="tracked-project-details">
+                <div class="tracked-project-name">${p.project_name}</div>
+                <div class="tracked-project-path">${shortPath}</div>
+              </div>
+            </div>
+            <div class="tracked-project-actions">
+              ${!p.folder_exists ? '<span class="version-badge badge-folder-gone">Missing</span>' : `<span class="version-badge badge-ready">via ${p.source || '?'}</span>`}
+              <button class="btn btn-small btn-ghost" onclick="removeTrackedProject('${p.path.replace(/'/g, "\\'")}')">Remove</button>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function toggleVersionMenu(version) {
+  // Close all other menus first
+  document.querySelectorAll('.dropdown-menu').forEach(m => {
+    if (m.id !== `menu-${version}`) m.classList.add('hidden');
+  });
+  const menu = document.getElementById(`menu-${version}`);
+  menu.classList.toggle('hidden');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.version-dropdown')) {
+    document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.add('hidden'));
+  }
+});
+
+async function setGlobal(version) {
+  document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.add('hidden'));
+  try {
+    await invoke('set_global_version', { version });
+    showToast(`Ruby ${version} set as global default — active in all new terminals`, 'success');
+    refreshDashboard();
+  } catch (e) {
+    showToast(e, 'error');
+  }
+}
+
+async function promptSetLocal(version) {
+  document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.add('hidden'));
+
+  try {
+    const selected = await invoke('pick_folder', {
+      title: `Select project folder for Ruby ${version}`
+    });
+
+    if (!selected) return; // User cancelled
+
+    await invoke('set_local_version', { path: selected, version });
+    const folderName = selected.split('/').pop() || selected;
+    showToast(`Ruby ${version} pinned to ${folderName}/ via .ruby-version`, 'success');
+  } catch (e) {
+    showToast(`Failed: ${e}`, 'error');
+  }
+}
+
+async function uninstallRuby(version) {
+  const confirmed = await showConfirm(
+    'Uninstall Ruby',
+    `Remove Ruby ${version} and all its gems? This cannot be undone.`
+  );
+  if (!confirmed) return;
+
+  try {
+    await invoke('uninstall_ruby', { version });
+    showToast(`Ruby ${version} removed`, 'success');
+    refreshDashboard();
+  } catch (e) {
+    showToast(e, 'error');
+  }
+}
+
+// ============================================
+// Install
+// ============================================
+
+let installing = false;
+
+async function refreshAvailable() {
+  const grid = document.getElementById('available-list');
+  grid.innerHTML = `
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <p>Loading available versions...</p>
+    </div>
+  `;
+
+  try {
+    const versions = await invoke('get_available_rubies');
+    grid.innerHTML = versions.map(ruby => `
+      <div class="version-card ${ruby.installed ? 'installed' : ''}">
+        <span class="version-number">${ruby.version}</span>
+        ${ruby.installed
+          ? '<span class="version-badge badge-installed">Installed</span>'
+          : '<span class="version-badge badge-prebuilt">Pre-built</span>'
+        }
+        ${!ruby.installed
+          ? `<button class="btn btn-primary btn-small" onclick="installRuby('${ruby.version}')" ${installing ? 'disabled' : ''}>Install</button>`
+          : '<button class="btn btn-ghost btn-small" disabled>Installed</button>'
+        }
+      </div>
+    `).join('');
+  } catch (e) {
+    grid.innerHTML = `<div class="empty-state"><p>Failed to load versions: ${e}</p></div>`;
+  }
+}
+
+async function installRuby(version) {
+  if (installing) return;
+  installing = true;
+
+  const progressContainer = document.getElementById('install-progress-container');
+  progressContainer.classList.remove('hidden');
+
+  try {
+    await invoke('install_ruby', { version });
+    showToast(`Ruby ${version} installed successfully!`, 'success');
+    refreshAvailable();
+    refreshDashboard();
+  } catch (e) {
+    showToast(`Install failed: ${e}`, 'error');
+  } finally {
+    installing = false;
+    setTimeout(() => progressContainer.classList.add('hidden'), 2000);
+  }
+}
+
+// Install progress listener is set up in init()
+
+// ============================================
+// Projects
+// ============================================
+
+async function openProject() {
+  try {
+    const selected = await invoke('pick_folder', {
+      title: 'Select a Ruby project folder'
+    });
+
+    if (!selected) return;
+
+    // Scan and auto-register the project
+    const result = await invoke('scan_project', { path: selected });
+    renderProjectResult(result);
+
+    // Add to tracked projects and refresh the list
+    const tracked = await invoke('add_tracked_project', { path: selected });
+    renderTrackedProjectsList(tracked);
+  } catch (e) {
+    showToast(`Failed to scan project: ${e}`, 'error');
+  }
+}
+
+function renderProjectResult(scan) {
+  const container = document.getElementById('project-result');
+  container.classList.remove('hidden');
+
+  const shortPath = scan.path.replace(/^\/Users\/[^/]+/, '~');
+  const version = scan.detected_version;
+
+  let versionRow;
+  let actionsHtml;
+
+  if (version && scan.version_installed) {
+    // Version detected and installed — all good
+    versionRow = `
+      <div class="project-detail-row success">
+        <span class="project-detail-icon" style="color:var(--success)">&#10003;</span>
+        <div class="project-detail-content">
+          <div class="project-detail-label">Ruby ${version}</div>
+          <div class="project-detail-value">Detected from ${scan.source} — already installed</div>
+        </div>
+        <span class="version-badge badge-installed">Ready</span>
+      </div>
+    `;
+    actionsHtml = `
+      <button class="btn btn-primary" onclick="setGlobalFromProject('${version}')">Set as Global</button>
+    `;
+  } else if (version && !scan.version_installed) {
+    // Version detected but not installed — offer to install
+    versionRow = `
+      <div class="project-detail-row missing">
+        <span class="project-detail-icon" style="color:var(--error)">&#10007;</span>
+        <div class="project-detail-content">
+          <div class="project-detail-label">Ruby ${version}</div>
+          <div class="project-detail-value">Detected from ${scan.source} — not installed</div>
+        </div>
+        <span class="version-badge" style="background:var(--error-bg);color:var(--error);border:1px solid rgba(239,68,68,0.3)">Missing</span>
+      </div>
+    `;
+    actionsHtml = `
+      <button class="btn btn-primary" onclick="installForProject('${version}', '${scan.path.replace(/'/g, "\\'")}')">
+        Install Ruby ${version} &amp; Set Up
+      </button>
+    `;
+  } else {
+    // No version detected
+    versionRow = `
+      <div class="project-detail-row warning">
+        <span class="project-detail-icon" style="color:var(--warning)">&#9888;</span>
+        <div class="project-detail-content">
+          <div class="project-detail-label">No Ruby version specified</div>
+          <div class="project-detail-value">No .ruby-version, .tool-versions, or Gemfile ruby constraint found</div>
+        </div>
+      </div>
+    `;
+    actionsHtml = `
+      <button class="btn btn-secondary" onclick="switchTab('install')">Browse Ruby Versions</button>
+    `;
+  }
+
+  const gemfileRow = scan.has_gemfile ? `
+    <div class="project-detail-row success">
+      <span class="project-detail-icon" style="color:var(--success)">&#10003;</span>
+      <div class="project-detail-content">
+        <div class="project-detail-label">Gemfile found</div>
+        <div class="project-detail-value">Run <code>bundle install</code> after Ruby is set up</div>
+      </div>
+    </div>
+  ` : '';
+
+  container.innerHTML = `
+    <div class="project-card">
+      <div class="project-card-header">
+        <div class="project-card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
+        <div>
+          <div class="project-card-title">${scan.project_name}</div>
+          <div class="project-card-path">${shortPath}</div>
+        </div>
+      </div>
+
+      <div class="project-detail-rows">
+        ${versionRow}
+        ${gemfileRow}
+      </div>
+
+      <div class="project-actions">
+        ${actionsHtml}
+        <button class="btn btn-secondary" onclick="openProject()">Scan Another</button>
+      </div>
+    </div>
+  `;
+}
+
+async function installForProject(version, projectPath) {
+  // Switch to install tab and trigger install, then come back to set local version
+  showToast(`Installing Ruby ${version}...`, 'info');
+
+  try {
+    await invoke('install_ruby', { version });
+    // After install, set it as local version for the project
+    await invoke('set_local_version', { path: projectPath, version });
+    showToast(`Ruby ${version} installed and pinned to project!`, 'success');
+    // Re-scan to update the UI
+    const result = await invoke('scan_project', { path: projectPath });
+    renderProjectResult(result);
+    refreshTrackedProjects();
+    refreshDashboard();
+  } catch (e) {
+    showToast(`Failed: ${e}`, 'error');
+  }
+}
+
+async function refreshTrackedProjects() {
+  try {
+    const projects = await invoke('get_tracked_projects');
+    renderTrackedProjectsList(projects);
+  } catch (e) {
+    console.error('Failed to load tracked projects:', e);
+  }
+}
+
+function renderTrackedProjectsList(projects) {
+  const section = document.getElementById('tracked-projects-section');
+  const list = document.getElementById('tracked-projects-list');
+
+  if (!projects || projects.length === 0) {
+    section.classList.add('hidden');
+    return;
+  }
+
+  section.classList.remove('hidden');
+
+  const folderSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+
+  list.innerHTML = projects.map((p, idx) => {
+    const shortPath = p.path.replace(/^\/Users\/[^/]+/, '~');
+    let badge, statusClass;
+
+    if (!p.folder_exists) {
+      badge = '<span class="version-badge badge-folder-gone">Folder Missing</span>';
+      statusClass = 'folder-missing';
+    } else if (p.detected_version && p.version_installed) {
+      badge = '<span class="version-badge badge-ready">Ready</span>';
+      statusClass = '';
+    } else if (p.detected_version && !p.version_installed) {
+      badge = '<span class="version-badge badge-missing-ruby">Not Installed</span>';
+      statusClass = '';
+    } else {
+      badge = '<span class="version-badge badge-no-version">No Version</span>';
+      statusClass = '';
+    }
+
+    const versionDisplay = p.detected_version
+      ? `<span class="tracked-project-version-number">${p.detected_version}</span>
+         <span class="tracked-project-source">via ${p.source || '?'}</span>`
+      : '<span class="tracked-project-source">—</span>';
+
+    const esc = p.path.replace(/'/g, "\\'");
+    const installBtn = (p.detected_version && !p.version_installed && p.folder_exists)
+      ? `<button class="btn btn-small btn-primary" onclick="installForProject('${p.detected_version}', '${esc}')">Install</button>`
+      : '';
+    const bundleBtn = (p.has_gemfile && p.version_installed && p.folder_exists)
+      ? `<button class="btn btn-small btn-secondary" id="bundle-btn-${idx}" onclick="runBundleInstall('${p.detected_version}', '${esc}', ${idx})">Bundle</button>`
+      : '';
+    const gemsBtn = (p.has_gemfile_lock && p.folder_exists)
+      ? `<button class="btn btn-small btn-ghost" onclick="toggleProjectGems('${esc}', ${idx})">Gems</button>`
+      : '';
+
+    return `
+      <div class="tracked-project-block" id="project-block-${idx}">
+        <div class="tracked-project-item ${statusClass}">
+          <div class="tracked-project-info">
+            <div class="tracked-project-icon">${folderSvg}</div>
+            <div class="tracked-project-details">
+              <div class="tracked-project-name">${p.project_name}</div>
+              <div class="tracked-project-path">${shortPath}</div>
+            </div>
+          </div>
+          <div class="tracked-project-version">
+            ${versionDisplay}
+            ${badge}
+          </div>
+          <div class="tracked-project-actions">
+            ${gemsBtn}
+            ${bundleBtn}
+            ${installBtn}
+            <button class="btn btn-small btn-ghost" onclick="removeTrackedProject('${esc}')">Remove</button>
+          </div>
+        </div>
+        <div class="project-inline-panel" id="project-panel-${idx}"></div>
+      </div>
+    `;
+  }).join('');
+}
+
+let openProjectGems = {};
+
+async function runBundleInstall(rubyVersion, projectPath, idx) {
+  const btn = document.getElementById(`bundle-btn-${idx}`);
+  const panel = document.getElementById(`project-panel-${idx}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Installing...'; }
+
+  panel.innerHTML = `
+    <div class="inline-panel-content">
+      <div class="bundle-log">
+        <div class="bundle-log-header">
+          <span>Bundle Install</span>
+          <div class="bundle-spinner" id="bundle-spinner-${idx}">
+            <div class="spinner" style="width:16px;height:16px;border-width:2px;margin:0"></div>
+          </div>
+        </div>
+        <pre class="bundle-output" id="bundle-output-${idx}">Running bundle install...</pre>
+      </div>
+    </div>
+  `;
+
+  try {
+    const result = await invoke('bundle_install', { rubyVersion, projectPath });
+    document.getElementById(`bundle-output-${idx}`).textContent = result || 'Bundle install completed successfully.';
+    showToast('Bundle install completed', 'success');
+  } catch (e) {
+    document.getElementById(`bundle-output-${idx}`).textContent = e;
+    showToast('Bundle install failed', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Bundle'; }
+    // Always stop the spinner
+    const spinner = document.getElementById(`bundle-spinner-${idx}`);
+    if (spinner) spinner.innerHTML = '';
+  }
+}
+
+async function toggleProjectGems(projectPath, idx) {
+  const panel = document.getElementById(`project-panel-${idx}`);
+  if (openProjectGems[idx]) {
+    panel.innerHTML = '';
+    openProjectGems[idx] = false;
+    return;
+  }
+
+  openProjectGems[idx] = true;
+  panel.innerHTML = '<div class="inline-panel-content"><div class="loading-state"><div class="spinner"></div><p>Loading gems...</p></div></div>';
+
+  try {
+    const gems = await invoke('get_project_gems', { projectPath });
+    if (gems.length === 0) {
+      panel.innerHTML = '<div class="inline-panel-content"><p style="color:var(--slate-500);padding:8px 0">No gems found in Gemfile.lock</p></div>';
+      return;
+    }
+    panel.innerHTML = `
+      <div class="inline-panel-content">
+        <div class="project-gems-header">${gems.length} gems in Gemfile.lock</div>
+        <div class="gems-list">
+          ${gems.map(g => `
+            <div class="gem-item">
+              <span class="gem-name">${g.name}</span>
+              <span class="gem-version">${g.version}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    panel.innerHTML = `<div class="inline-panel-content"><p style="color:var(--slate-500)">${e}</p></div>`;
+    openProjectGems[idx] = false;
+  }
+}
+
+async function removeTrackedProject(path) {
+  try {
+    await invoke('remove_tracked_project', { path });
+    showToast('Project removed from tracking', 'success');
+    // Refresh any open projects panels and the tracked list on Projects tab
+    for (const [version, panelType] of Object.entries(openPanels)) {
+      if (panelType === 'projects') loadPanel(version, 'projects');
+    }
+    refreshTrackedProjects();
+  } catch (e) {
+    showToast(e, 'error');
+  }
+}
+
+async function setGlobalFromProject(version) {
+  try {
+    await invoke('set_global_version', { version });
+    showToast(`Ruby ${version} set as global default`, 'success');
+  } catch (e) {
+    showToast(e, 'error');
+  }
+}
+
+// ============================================
+// Doctor
+// ============================================
+
+async function runDoctor() {
+  const btn = document.getElementById('run-doctor-btn');
+  const results = document.getElementById('doctor-results');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+
+  try {
+    const diagnostics = await invoke('run_doctor');
+    results.innerHTML = diagnostics.map((d, i) => {
+      const icon = { ok: '&#10003;', warning: '&#9888;', error: '&#10007;' }[d.status];
+      const fixBtn = d.fix_command
+        ? `<button class="btn btn-small btn-primary" id="fix-btn-${i}" onclick="runDoctorFix('${d.fix_command.replace(/'/g, "\\'")}', ${i})">Fix</button>`
+        : '';
+      return `
+        <div class="doctor-item">
+          <div class="doctor-icon ${d.status}">${icon}</div>
+          <div class="doctor-body">
+            <div class="doctor-name">${d.name}</div>
+            <div class="doctor-message">${d.message}</div>
+            ${d.fix_hint ? `<div class="doctor-hint">${d.fix_hint}</div>` : ''}
+          </div>
+          ${fixBtn}
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    results.innerHTML = `<div class="empty-state"><p>Diagnostics failed: ${e}</p></div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Diagnostics';
+  }
+}
+
+async function runDoctorFix(command, idx) {
+  const btn = document.getElementById(`fix-btn-${idx}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Fixing...'; }
+
+  try {
+    await invoke('run_doctor_fix', { command });
+    showToast(`Fixed: ${command}`, 'success');
+    // Re-run diagnostics to update the results
+    runDoctor();
+  } catch (e) {
+    showToast(`Fix failed: ${e}`, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Fix'; }
+  }
+}
+
+// ============================================
+// Settings — Shell Hook
+// ============================================
+
+async function refreshShellHookStatus() {
+  const container = document.getElementById('shell-hook-status');
+  try {
+    const statuses = await invoke('check_shell_hook');
+    container.innerHTML = statuses.map(s => {
+      const shortFile = s.rc_file.replace(/^\/Users\/[^/]+/, '~');
+      return `
+        <div class="shell-hook-item ${s.installed ? 'installed' : ''}">
+          <div class="shell-hook-info">
+            <span class="shell-hook-icon ${s.installed ? 'ok' : 'missing'}">${s.installed ? '&#10003;' : '&#9675;'}</span>
+            <div>
+              <div class="shell-hook-name">${s.shell}</div>
+              <div class="shell-hook-file">${shortFile}</div>
+            </div>
+          </div>
+          ${s.installed
+            ? '<span class="version-badge badge-installed">Installed</span>'
+            : `<button class="btn btn-small btn-primary" onclick="doInstallHook('${s.shell}')">Install Hook</button>`
+          }
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--slate-500)">Could not detect shells: ${e}</p>`;
+  }
+}
+
+async function doInstallHook(shell) {
+  try {
+    const result = await invoke('install_shell_hook', { shell });
+    showToast(`${result}. Restart your terminal to activate.`, 'success');
+    refreshShellHookStatus();
+  } catch (e) {
+    showToast(e, 'error');
+  }
+}
+
+async function showShellHook() {
+  const shell = document.getElementById('shell-select').value;
+  const preview = document.getElementById('shell-hook-preview');
+  try {
+    const hook = await invoke('get_shell_hook', { shell });
+    preview.textContent = hook;
+    preview.classList.remove('hidden');
+  } catch (e) {
+    showToast(e, 'error');
+  }
+}
+
+function openExternal(url) {
+  window.__TAURI__.shell.open(url);
+}
+
+// ============================================
+// Gems Panel
+// ============================================
+
+let currentGemsData = [];
+let currentGemsVersion = '';
+
+async function installGemFromInput() {
+  const input = document.getElementById('gem-install-input');
+  const versionInput = document.getElementById('gem-version-input');
+  const btn = document.getElementById('gem-install-btn');
+  const gemName = input.value.trim().toLowerCase();
+  const gemVersion = versionInput.value.trim() || undefined;
+
+  if (!gemName || !currentGemsVersion) return;
+
+  const displayName = gemVersion ? `${gemName} ${gemVersion}` : gemName;
+  btn.disabled = true;
+  btn.textContent = 'Installing...';
+
+  try {
+    const params = { rubyVersion: currentGemsVersion, gemName: gemName };
+    if (gemVersion) params.gemVersion = gemVersion;
+    const result = await invoke('install_gem', params);
+    showToast(`Installed ${displayName}`, 'success');
+    input.value = '';
+    versionInput.value = '';
+    // Refresh the inline gems panel
+    loadPanel(currentGemsVersion, 'gems');
+  } catch (e) {
+    showToast(`Failed to install ${displayName}: ${e}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Install Gem';
+  }
+}
+
+async function removeGem(gemName) {
+  const confirmed = await showConfirm(
+    'Uninstall Gem',
+    `Remove ${gemName} from Ruby ${currentGemsVersion}?`
+  );
+  if (!confirmed) return;
+
+  try {
+    await invoke('uninstall_gem', {
+      rubyVersion: currentGemsVersion,
+      gemName: gemName
+    });
+    showToast(`Removed ${gemName}`, 'success');
+    loadPanel(currentGemsVersion, 'gems');
+  } catch (e) {
+    showToast(`Failed to remove ${gemName}: ${e}`, 'error');
+  }
+}
+
+function filterGems() {
+  const search = document.getElementById('gems-search').value.toLowerCase();
+  const showDefault = document.getElementById('gems-show-default').checked;
+  const showUser = document.getElementById('gems-show-user').checked;
+
+  const filtered = currentGemsData.filter(gem => {
+    const matchesSearch = gem.name.toLowerCase().includes(search) || gem.version.includes(search);
+    const matchesType = (gem.is_default && showDefault) || (!gem.is_default && showUser);
+    return matchesSearch && matchesType;
+  });
+
+  renderGems(filtered);
+}
+
+// renderGems is now handled by renderInlineGems inside the version block
+
+// ============================================
+// Init
+// ============================================
+
+async function init() {
+  // Listen for install progress events from the Rust backend
+  listen('install-progress', (event) => {
+    const { stage, percent, message } = event.payload;
+    document.getElementById('install-progress-stage').textContent =
+      { download: 'Downloading', extract: 'Extracting', verify: 'Verifying', done: 'Complete' }[stage] || stage;
+    document.getElementById('install-progress-percent').textContent = `${percent}%`;
+    document.getElementById('install-progress-fill').style.width = `${percent}%`;
+    document.getElementById('install-progress-message').textContent = message;
+  });
+
+  await detectPlatform();
+  await refreshDashboard();
+}
+
+// Wait for both DOM and Tauri to be ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
