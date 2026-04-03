@@ -1018,23 +1018,41 @@ function filterGems() {
 const INFO_CONTENT = {
   dashboard: {
     title: 'Dashboard',
-    body: 'The Dashboard shows an overview of your Ruby environment: how many versions are installed, which one is active, and quick access to gems and projects for each version. Use the <strong>Gems</strong> and <strong>Projects</strong> buttons on each version to expand inline panels. The <strong>Use</strong> dropdown lets you set a version as your global default or pin it to a specific project folder.'
+    body: `<p>The Dashboard shows an overview of your Ruby environment: how many versions you have installed, which one is currently active, and how many more are available to download.</p>
+<p>Each installed version has <strong>Gems</strong> and <strong>Projects</strong> buttons that expand inline panels where you can browse, install, or remove gems, and see which projects use that version.</p>
+<p>The <strong>Use</strong> dropdown lets you set a version as your global default (used in all terminals) or pin it to a specific project folder by writing a <code>.ruby-version</code> file.</p>`
   },
   install: {
     title: 'Install Ruby',
-    body: 'Rubynaut installs pre-built Ruby binaries from the <strong>ruby-builder</strong> project (the same source GitHub Actions uses). Installation takes seconds instead of the 5-15 minutes needed to compile from source. Supported engines include <strong>CRuby</strong>, <strong>JRuby</strong>, and <strong>TruffleRuby</strong>. Each download is verified with a SHA256 checksum.'
+    body: `<p>Rubynaut installs pre-built Ruby binaries from the <strong>ruby-builder</strong> project &mdash; the same source that GitHub Actions uses. Installation takes seconds instead of the 5&ndash;15 minutes needed to compile from source.</p>
+<p>Supported engines include <strong>CRuby</strong> (the standard Ruby), <strong>JRuby</strong> (Ruby on the JVM), and <strong>TruffleRuby</strong> (high-performance Ruby from Oracle).</p>
+<p>Every download is verified with a <strong>SHA256 checksum</strong> to ensure the file hasn't been corrupted or tampered with.</p>`
   },
   projects: {
     title: 'Project Tracking',
-    body: 'Open a project folder and Rubynaut will detect which Ruby version it needs by reading <strong>.ruby-version</strong>, <strong>.tool-versions</strong> (asdf/mise), or the <strong>Gemfile</strong> ruby constraint. If the required version isn\'t installed, you can install it with one click. Tracked projects appear in a list so you can see the status of all your Ruby projects at a glance.'
+    body: `<p>Open a project folder and Rubynaut will automatically detect which Ruby version it needs by reading one of these files:</p>
+<p>&bull; <strong>.ruby-version</strong> &mdash; the standard version file used by rbenv and others<br>
+&bull; <strong>.tool-versions</strong> &mdash; the format used by asdf and mise<br>
+&bull; <strong>Gemfile</strong> &mdash; the <code>ruby "3.3.6"</code> constraint in your Gemfile</p>
+<p>If the required version isn't installed, you can install it with one click. Tracked projects appear in a list so you can see the status of all your Ruby projects at a glance.</p>`
   },
   doctor: {
     title: 'Environment Doctor',
-    body: 'Doctor runs 9 diagnostic checks on your system: <strong>rubies directory</strong>, <strong>installed versions</strong>, <strong>shell hook</strong>, <strong>PATH resolution</strong>, <strong>conflicting managers</strong> (rbenv, rvm, etc.), <strong>C compiler</strong>, and <strong>shared libraries</strong> (libyaml, OpenSSL, libffi, GMP). Items marked with an error have a <strong>Fix</strong> button that runs the appropriate install command for your platform.'
+    body: `<p>Doctor runs <strong>9 diagnostic checks</strong> on your system to make sure everything Ruby needs is in place:</p>
+<p>&bull; Rubies directory exists<br>
+&bull; At least one Ruby version installed<br>
+&bull; Shell hook is set up<br>
+&bull; <code>ruby</code> resolves correctly in PATH<br>
+&bull; No conflicting managers (rbenv, rvm, etc.)<br>
+&bull; C compiler available (for native gem extensions)<br>
+&bull; Shared libraries: libyaml, OpenSSL, libffi, GMP</p>
+<p>Items marked with an error have a <strong>Fix</strong> button that runs the appropriate install command for your platform (e.g. <code>brew install libyaml</code>).</p>`
   },
   settings: {
     title: 'Settings',
-    body: 'Configure your shell integration so Ruby versions switch automatically when you <code>cd</code> into a project. Rubynaut supports <strong>bash</strong>, <strong>zsh</strong>, <strong>fish</strong>, and <strong>PowerShell</strong>. You can also view the hook code to install it manually. The About section has links to the GitHub repository and issue tracker.'
+    body: `<p>Configure your <strong>shell integration</strong> so Ruby versions switch automatically when you <code>cd</code> into a project with a <code>.ruby-version</code> file.</p>
+<p>Rubynaut supports <strong>bash</strong>, <strong>zsh</strong>, <strong>fish</strong>, and <strong>PowerShell</strong>. Click "Install Hook" to add the integration to your shell config, or use "Show Hook" to copy the code manually.</p>
+<p>The <strong>About</strong> section has links to the GitHub repository, issue tracker, and contribution guide.</p>`
   }
 };
 
@@ -1050,7 +1068,7 @@ function showInfoPopup(infoKey) {
   popup.innerHTML = `
     <div class="info-popup">
       <div class="info-popup-header">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span class="info-popup-icon">i</span>
         <h3>${escapeHtml(info.title)}</h3>
         <button class="info-popup-close" data-action="close-info">&times;</button>
       </div>
