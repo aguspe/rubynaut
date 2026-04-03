@@ -737,9 +737,12 @@ pub async fn fetch_versions_from_github() -> Result<Vec<String>, String> {
         ("truffleruby-", "truffleruby-"),    // TruffleRuby
     ];
 
+    let api_base = std::env::var("RUBYNAUT_GITHUB_API_BASE")
+        .unwrap_or_else(|_| "https://api.github.com".to_string());
+
     loop {
         let url = format!(
-            "https://api.github.com/repos/ruby/ruby-builder/releases?per_page=100&page={page}"
+            "{api_base}/repos/ruby/ruby-builder/releases?per_page=100&page={page}"
         );
         let response = client
             .get(&url)
@@ -904,6 +907,12 @@ pub fn build_http_client() -> Result<reqwest::Client, String> {
 /// Get the base download URL, respecting mirror_url from config.
 /// Default: "https://github.com/ruby/ruby-builder"
 pub fn download_base_url() -> String {
+    // Env var override (for testing with wiremock)
+    if let Ok(url) = std::env::var("RUBYNAUT_DOWNLOAD_BASE_URL") {
+        if !url.is_empty() {
+            return url;
+        }
+    }
     let config = read_config();
     config.mirror_url
         .filter(|u| !u.is_empty())
@@ -962,7 +971,9 @@ struct GitHubAppRelease {
 /// Returns (latest_tag, download_url) if a newer version is available.
 pub async fn check_for_update(current_version: &str, repo: &str) -> Result<Option<(String, String)>, String> {
     let client = build_http_client()?;
-    let url = format!("https://api.github.com/repos/{repo}/releases/latest");
+    let api_base = std::env::var("RUBYNAUT_GITHUB_API_BASE")
+        .unwrap_or_else(|_| "https://api.github.com".to_string());
+    let url = format!("{api_base}/repos/{repo}/releases/latest");
 
     let response = client
         .get(&url)

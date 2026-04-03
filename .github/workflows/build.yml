@@ -220,8 +220,18 @@ jobs:
           if-no-files-found: ignore
 
   test:
-    runs-on: ubuntu-22.04
-    name: Tests & Coverage
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            name: Linux
+          - platform: macos-latest
+            name: macOS
+          - platform: windows-latest
+            name: Windows
+    runs-on: ${{ matrix.platform }}
+    name: Tests (${{ matrix.name }})
 
     steps:
       - uses: actions/checkout@v4
@@ -233,6 +243,7 @@ jobs:
         uses: swatinem/rust-cache@v2
 
       - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev
@@ -241,12 +252,15 @@ jobs:
         run: cargo test --workspace
 
       - name: Install cargo-tarpaulin
+        if: runner.os == 'Linux'
         run: cargo install cargo-tarpaulin
 
       - name: Run tests with coverage
+        if: runner.os == 'Linux'
         run: cargo tarpaulin -p rubynaut-core --out xml --output-dir coverage
 
       - name: Upload coverage
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
