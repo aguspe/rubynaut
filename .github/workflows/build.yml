@@ -124,12 +124,29 @@ jobs:
             The macOS build is signed and notarized. Install by opening the `.dmg` and dragging to Applications.
 
             ## Windows
-            SmartScreen may show a warning since the Windows build is not yet code-signed. Click "More info" > "Run anyway".
+            The Windows build is signed with Azure Trusted Signing. Run the `.msi` installer.
 
             ## Linux
             Install via `.deb` (`sudo dpkg -i rubynaut.deb`) or run the `.AppImage` directly.
           releaseDraft: true
           prerelease: false
+
+      # Windows: Sign the MSI and EXE with Azure Trusted Signing
+      - name: Sign Windows artifacts
+        if: runner.os == 'Windows' && secrets.AZURE_CLIENT_ID != ''
+        uses: azure/trusted-signing-action@v0.5.0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_CERT_PROFILE }}
+          files-folder: src-tauri/target/release/bundle
+          files-folder-filter: exe,msi
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
