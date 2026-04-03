@@ -1,5 +1,8 @@
 //! Integration tests for set_global_version, set_local_version, and config operations.
 //! Runs in a separate process so setting HOME is safe.
+//! NOTE: Unix-only (uses chmod for fake Ruby binaries).
+
+#![cfg(unix)]
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;

@@ -1,6 +1,9 @@
 //! Integration tests for install_ruby, install_gem, uninstall_gem, bundle_install.
 //! These run in a separate process so setting HOME is safe.
 //! NOTE: Run with --test-threads=1 since tests share process-global env vars.
+//! NOTE: These tests are Unix-only (shell scripts, chmod, tar).
+
+#![cfg(unix)]
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;

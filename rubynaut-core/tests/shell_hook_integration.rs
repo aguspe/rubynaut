@@ -1,5 +1,8 @@
 //! Integration tests for install_shell_hook().
 //! Runs in a separate process so setting HOME is safe.
+//! NOTE: Unix-only (shell rc files are a Unix concept).
+
+#![cfg(unix)]
 
 use std::fs;
 use tempfile::TempDir;
