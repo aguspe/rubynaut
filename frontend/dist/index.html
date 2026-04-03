@@ -122,6 +122,8 @@
             <p>Loading available versions...</p>
           </div>
         </div>
+
+        <div id="install-whats-next" class="whats-next-panel hidden"></div>
       </section>
 
       <!-- Projects -->
@@ -222,6 +224,68 @@
   </div>
 
   <div id="toast-container" class="toast-container"></div>
+
+  <!-- Getting Started Wizard -->
+  <div id="wizard-overlay" class="wizard-overlay hidden">
+    <div class="wizard-container">
+      <div class="wizard-step-indicator" id="wizard-dots"></div>
+
+      <div class="wizard-step" data-step="1">
+        <img src="icons/rubynaut-logo.svg" alt="Rubynaut" class="wizard-logo">
+        <h2>Welcome to Rubynaut</h2>
+        <p>The easiest way to install and manage Ruby versions. Let's get you set up in under a minute.</p>
+        <div class="wizard-nav">
+          <button class="btn btn-primary" data-action="wizard-next">Get Started</button>
+        </div>
+      </div>
+
+      <div class="wizard-step" data-step="2">
+        <h2>Install Ruby</h2>
+        <p>We'll install the latest stable Ruby version for you.</p>
+        <div class="wizard-status" id="wizard-install-version"></div>
+        <div id="wizard-progress" class="progress-container hidden">
+          <div class="progress-bar"><div class="progress-fill" id="wizard-progress-fill"></div></div>
+          <p class="progress-message" id="wizard-progress-msg"></p>
+        </div>
+        <div class="wizard-nav">
+          <button class="btn btn-secondary" data-action="wizard-back">Back</button>
+          <button class="btn btn-primary" id="wizard-install-btn" data-action="wizard-install-ruby">Install</button>
+        </div>
+      </div>
+
+      <div class="wizard-step" data-step="3">
+        <h2>Global Default Set</h2>
+        <p>This Ruby version is now your default across all terminals.</p>
+        <div class="wizard-status success" id="wizard-global-status"></div>
+        <div class="wizard-check-option">
+          <input type="checkbox" id="wizard-install-rails" checked>
+          <label for="wizard-install-rails">Also install Rails (recommended for web development)</label>
+        </div>
+        <div class="wizard-nav">
+          <button class="btn btn-primary" data-action="wizard-next">Continue</button>
+        </div>
+      </div>
+
+      <div class="wizard-step" data-step="4">
+        <h2>Shell Integration</h2>
+        <p>Rubynaut needs a small hook in your shell config to switch Ruby versions automatically.</p>
+        <div class="wizard-status" id="wizard-shell-status"></div>
+        <div class="wizard-nav">
+          <button class="btn btn-secondary" data-action="wizard-skip-shell">Skip</button>
+          <button class="btn btn-primary" id="wizard-hook-btn" data-action="wizard-install-hook">Install Hook</button>
+        </div>
+      </div>
+
+      <div class="wizard-step" data-step="5">
+        <h2>You're Ready!</h2>
+        <p>Ruby is installed, configured, and ready to use.</p>
+        <div id="wizard-whats-next"></div>
+        <div class="wizard-nav">
+          <button class="btn btn-primary" data-action="wizard-complete">Open Dashboard</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

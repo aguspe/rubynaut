@@ -291,3 +291,34 @@ fn test_gems_list_no_active() {
         .failure()
         .stderr(predicate::str::contains("No active Ruby"));
 }
+
+// ==========================================
+// Init command
+// ==========================================
+
+#[test]
+fn test_init_help() {
+    rubynaut()
+        .args(["init", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Set up Ruby for the first time"));
+}
+
+#[test]
+fn test_init_no_rails_flag_accepted() {
+    rubynaut()
+        .args(["init", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--no-rails"));
+}
+
+#[test]
+fn test_init_version_flag_accepted() {
+    rubynaut()
+        .args(["init", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--version"));
+}

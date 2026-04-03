@@ -33,6 +33,9 @@ pub struct RubynautConfig {
     /// Version aliases (e.g. "4.0" → "4.0.2", "stable" → "4.0.2").
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub aliases: HashMap<String, String>,
+    /// Whether the first-launch wizard has been completed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub wizard_completed: bool,
 }
 
 #[derive(Debug, Serialize, Clone)]

@@ -5,6 +5,8 @@ test.describe("Settings Tab", () => {
   test.beforeEach(async ({ page }) => {
     await mockTauriAPI(page);
     await page.goto("/");
+    // Wait for init() to complete (dashboard loads)
+    await expect(page.locator("#stat-installed")).toContainText("2", { timeout: 5000 });
     await page.click('[data-tab="settings"]');
   });
 
@@ -13,7 +15,7 @@ test.describe("Settings Tab", () => {
   });
 
   test("shows Shell Integration section", async ({ page }) => {
-    await expect(page.locator("text=Shell Integration")).toBeVisible();
+    await expect(page.locator("#tab-settings h3").first()).toContainText("Shell Integration");
   });
 
   test("detects and shows shell hook status", async ({ page }) => {

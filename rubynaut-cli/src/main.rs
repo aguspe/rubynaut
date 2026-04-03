@@ -94,6 +94,15 @@ enum Commands {
     Alias(AliasCommands),
     /// Check for and install Rubynaut updates
     Update,
+    /// Set up Ruby for the first time (install, configure, and go)
+    Init {
+        /// Skip Rails installation
+        #[arg(long)]
+        no_rails: bool,
+        /// Specific Ruby version to install (default: latest stable)
+        #[arg(long)]
+        version: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -238,6 +247,7 @@ async fn main() {
             AliasCommands::List => commands::alias_list(),
         },
         Commands::Update => commands::update().await,
+        Commands::Init { no_rails, version } => commands::init(no_rails, version).await,
     };
 
     if let Err(e) = result {

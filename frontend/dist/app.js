@@ -449,11 +449,61 @@ async function installRuby(version) {
     showToast(`Ruby ${version} installed successfully!`, 'success');
     refreshAvailable();
     refreshDashboard();
+    // Show "What's Next" panel
+    const whatsNext = document.getElementById('install-whats-next');
+    if (whatsNext) {
+      renderWhatsNextPanel(whatsNext);
+      whatsNext.classList.remove('hidden');
+    }
   } catch (e) {
     showToast(`Install failed: ${e}`, 'error');
   } finally {
     installing = false;
     setTimeout(() => progressContainer.classList.add('hidden'), 2000);
+  }
+}
+
+// ============================================
+// What's Next Panel
+// ============================================
+
+function renderWhatsNextPanel(container) {
+  container.innerHTML = `
+    <h3 class="whats-next-title">What's Next?</h3>
+    <div class="whats-next-grid">
+      <a class="whats-next-card" data-action="open-external" data-url="https://guides.rubyonrails.org/getting_started.html" href="#">
+        <div class="whats-next-card-title">Rails Getting Started</div>
+        <div class="whats-next-card-desc">Build your first web app with Ruby on Rails</div>
+      </a>
+      <a class="whats-next-card" data-action="open-external" data-url="https://www.rubykoans.com/" href="#">
+        <div class="whats-next-card-title">Ruby Koans</div>
+        <div class="whats-next-card-desc">Learn Ruby through test-driven exercises</div>
+      </a>
+      <a class="whats-next-card" data-action="open-external" data-url="https://exercism.org/tracks/ruby" href="#">
+        <div class="whats-next-card-title">Exercism Ruby Track</div>
+        <div class="whats-next-card-desc">Practice with mentored coding challenges</div>
+      </a>
+      <a class="whats-next-card" data-action="open-external" data-url="https://www.ruby-lang.org/en/documentation/" href="#">
+        <div class="whats-next-card-title">Ruby Documentation</div>
+        <div class="whats-next-card-desc">Official guides, tutorials, and API reference</div>
+      </a>
+    </div>
+    <div class="whats-next-try">
+      <p class="whats-next-try-label">Try Ruby right now:</p>
+      <code class="whats-next-code">ruby -e "puts 'Hello, Ruby!'"</code>
+      <button class="btn btn-secondary btn-small" data-action="copy-hello-ruby">Copy to Clipboard</button>
+    </div>
+  `;
+}
+
+function copyHelloRuby() {
+  const cmd = 'ruby -e "puts \'Hello, Ruby!\'"';
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(cmd).then(() => {
+      showToast('Copied to clipboard!', 'success');
+    }).catch(() => {
+      showToast('Could not copy — try selecting and copying manually', 'error');
+    });
   }
 }
 
@@ -962,6 +1012,162 @@ function filterGems() {
 // renderGems is now handled by renderInlineGems inside the version block
 
 // ============================================
+// Getting Started Wizard
+// ============================================
+
+let wizardStep = 1;
+let wizardVersion = '';
+const WIZARD_TOTAL_STEPS = 5;
+
+async function checkWizard() {
+  try {
+    const [config, installed] = await Promise.all([
+      invoke('get_config'),
+      invoke('get_installed_rubies'),
+    ]);
+    if (!config.wizard_completed && installed.length === 0) {
+      showWizard();
+    }
+  } catch (e) {
+    // Config or rubies call failed — skip wizard
+  }
+}
+
+function showWizard() {
+  const overlay = document.getElementById('wizard-overlay');
+  overlay.classList.remove('hidden');
+  wizardStep = 1;
+  renderWizardStep(1);
+}
+
+function renderWizardStep(step) {
+  wizardStep = step;
+  // Update dots
+  const dotsContainer = document.getElementById('wizard-dots');
+  dotsContainer.innerHTML = Array.from({ length: WIZARD_TOTAL_STEPS }, (_, i) => {
+    const cls = i + 1 === step ? 'active' : (i + 1 < step ? 'done' : '');
+    return `<div class="wizard-dot ${cls}"></div>`;
+  }).join('');
+
+  // Show/hide steps
+  document.querySelectorAll('.wizard-step').forEach(el => {
+    el.classList.toggle('active', parseInt(el.dataset.step) === step);
+  });
+
+  // Per-step setup
+  if (step === 2) {
+    setupWizardInstallStep();
+  } else if (step === 3) {
+    document.getElementById('wizard-global-status').textContent = `Ruby ${wizardVersion} is now your global default`;
+  } else if (step === 4) {
+    setupWizardShellStep();
+  } else if (step === 5) {
+    renderWhatsNextPanel(document.getElementById('wizard-whats-next'));
+  }
+}
+
+async function setupWizardInstallStep() {
+  const statusEl = document.getElementById('wizard-install-version');
+  statusEl.textContent = 'Detecting latest version...';
+  try {
+    wizardVersion = await invoke('get_latest_stable_version');
+    statusEl.textContent = `Ruby ${wizardVersion} (latest stable)`;
+  } catch (e) {
+    wizardVersion = '4.0.2';
+    statusEl.textContent = `Ruby ${wizardVersion} (fallback)`;
+  }
+}
+
+async function wizardInstallRuby() {
+  const btn = document.getElementById('wizard-install-btn');
+  btn.disabled = true;
+  btn.textContent = 'Installing...';
+
+  const progress = document.getElementById('wizard-progress');
+  progress.classList.remove('hidden');
+
+  // Listen for progress in wizard
+  const unlisten = await listen('install-progress', (event) => {
+    const { percent, message } = event.payload;
+    document.getElementById('wizard-progress-fill').style.width = `${percent}%`;
+    document.getElementById('wizard-progress-msg').textContent = message;
+  });
+
+  try {
+    await invoke('install_ruby', { version: wizardVersion });
+    await invoke('set_global_version', { version: wizardVersion });
+    unlisten();
+    progress.classList.add('hidden');
+
+    // Auto-advance to step 3
+    renderWizardStep(3);
+  } catch (e) {
+    unlisten();
+    btn.disabled = false;
+    btn.textContent = 'Retry';
+    document.getElementById('wizard-progress-msg').textContent = `Failed: ${e}`;
+  }
+}
+
+async function setupWizardShellStep() {
+  const statusEl = document.getElementById('wizard-shell-status');
+  try {
+    const hooks = await invoke('check_shell_hook');
+    const installed = hooks.find(h => h.installed);
+    if (installed) {
+      statusEl.textContent = `Shell hook already installed for ${installed.shell}`;
+      statusEl.classList.add('success');
+      document.getElementById('wizard-hook-btn').textContent = 'Already Installed';
+      document.getElementById('wizard-hook-btn').disabled = true;
+    } else {
+      const shell = hooks.length > 0 ? hooks[0].shell : 'zsh';
+      statusEl.textContent = `Detected shell: ${shell}`;
+      statusEl.dataset.shell = shell;
+    }
+  } catch (e) {
+    statusEl.textContent = 'Could not detect shell';
+  }
+}
+
+async function wizardInstallHook() {
+  const statusEl = document.getElementById('wizard-shell-status');
+  const shell = statusEl.dataset.shell || 'zsh';
+  const btn = document.getElementById('wizard-hook-btn');
+  btn.disabled = true;
+  btn.textContent = 'Installing...';
+
+  try {
+    await invoke('install_shell_hook', { shell });
+    statusEl.textContent = `Hook installed for ${shell}`;
+    statusEl.classList.add('success');
+    btn.textContent = 'Installed';
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Retry';
+    showToast(`Hook install failed: ${e}`, 'error');
+  }
+}
+
+async function wizardComplete() {
+  // Install Rails if checked
+  const railsCheckbox = document.getElementById('wizard-install-rails');
+  if (railsCheckbox && railsCheckbox.checked && wizardVersion) {
+    showToast('Installing Rails... this may take a minute', 'info');
+    try {
+      await invoke('install_gem', { rubyVersion: wizardVersion, gemName: 'rails' });
+      showToast('Rails installed!', 'success');
+    } catch (e) {
+      showToast(`Rails install failed: ${e}`, 'error');
+    }
+  }
+
+  // Mark wizard as completed
+  await invoke('set_wizard_completed');
+  document.getElementById('wizard-overlay').classList.add('hidden');
+  refreshDashboard();
+}
+
+// ============================================
 // Init
 // ============================================
 
@@ -1044,6 +1250,27 @@ async function init() {
       case 'install-hook':
         doInstallHook(target.dataset.shell);
         break;
+      case 'copy-hello-ruby':
+        copyHelloRuby();
+        break;
+      case 'wizard-next':
+        renderWizardStep(wizardStep + 1);
+        break;
+      case 'wizard-back':
+        renderWizardStep(wizardStep - 1);
+        break;
+      case 'wizard-install-ruby':
+        wizardInstallRuby();
+        break;
+      case 'wizard-install-hook':
+        wizardInstallHook();
+        break;
+      case 'wizard-skip-shell':
+        renderWizardStep(wizardStep + 1);
+        break;
+      case 'wizard-complete':
+        wizardComplete();
+        break;
     }
   });
 
@@ -1066,6 +1293,7 @@ async function init() {
 
   await detectPlatform();
   await refreshDashboard();
+  await checkWizard();
 }
 
 // Wait for both DOM and Tauri to be ready

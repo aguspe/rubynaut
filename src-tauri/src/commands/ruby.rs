@@ -128,3 +128,18 @@ pub fn install_shell_hook(shell: String) -> Result<String, String> {
 pub fn get_shell_hook(shell: String) -> Result<String, String> {
     rubynaut_core::get_shell_hook(shell)
 }
+
+#[tauri::command]
+pub fn get_config() -> Result<rubynaut_core::RubynautConfig, String> {
+    Ok(rubynaut_core::read_config())
+}
+
+#[tauri::command]
+pub fn set_wizard_completed() -> Result<(), String> {
+    rubynaut_core::set_wizard_completed()
+}
+
+#[tauri::command]
+pub async fn get_latest_stable_version() -> Result<String, String> {
+    rubynaut_core::get_latest_stable_version().await
+}

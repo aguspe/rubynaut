@@ -1296,6 +1296,68 @@ pub fn read_default_gems() -> Vec<(String, Option<String>)> {
         .collect()
 }
 
+/// Mark the first-launch wizard as completed in config.
+pub fn set_wizard_completed() -> Result<(), String> {
+    let mut config = read_config();
+    config.wizard_completed = true;
+    write_config(&config)
+}
+
+/// Get the latest stable CRuby version from available versions.
+/// Falls back to the first entry in fallback_versions() if network is unavailable.
+pub async fn get_latest_stable_version() -> Result<String, String> {
+    let available = get_available_rubies().await?;
+    // Filter to CRuby (versions starting with a digit, not jruby/truffleruby)
+    let cruby = available.iter().find(|v| {
+        v.version.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+    });
+    match cruby {
+        Some(v) => Ok(v.version.clone()),
+        None => {
+            let fb = fallback_versions();
+            fb.into_iter().next().ok_or_else(|| "No Ruby versions available".to_string())
+        }
+    }
+}
+
+/// Write or merge entries into the ~/.rubies/default-gems file.
+/// Existing entries are preserved; only new gems are appended.
+pub fn write_default_gems_file(gems: &[(String, Option<String>)]) -> Result<(), String> {
+    let path = rubies_dir().join("default-gems");
+    fs::create_dir_all(&rubies_dir())
+        .map_err(|e| format!("Failed to create rubies directory: {e}"))?;
+
+    let existing = read_default_gems();
+    let existing_names: Vec<String> = existing.iter().map(|(n, _)| n.to_lowercase()).collect();
+
+    let mut content = if path.exists() {
+        fs::read_to_string(&path).unwrap_or_default()
+    } else {
+        "# Default gems installed with each new Ruby version\n".to_string()
+    };
+
+    let mut added = 0;
+    for (name, version) in gems {
+        if !existing_names.contains(&name.to_lowercase()) {
+            if !content.ends_with('\n') {
+                content.push('\n');
+            }
+            match version {
+                Some(v) => content.push_str(&format!("{name} {v}\n")),
+                None => content.push_str(&format!("{name}\n")),
+            }
+            added += 1;
+        }
+    }
+
+    if added > 0 {
+        fs::write(&path, &content)
+            .map_err(|e| format!("Failed to write default-gems: {e}"))?;
+    }
+
+    Ok(())
+}
+
 pub async fn install_ruby(version: String, on_progress: Option<ProgressCallback>) -> Result<(), String> {
     if !is_valid_version(&version) {
         return Err(format!("Invalid version format: {version}. Expected format like 4.0.2, jruby-9.4.9.0, or truffleruby-24.1.1"));
@@ -3477,5 +3539,69 @@ PLATFORMS
         // Verify the tmp dir path is under rubies_dir
         assert!(tmp.to_string_lossy().contains(".rubies"));
         assert!(tmp.to_string_lossy().contains(".tmp-install"));
+    }
+
+    // ==========================================
+    // wizard_completed config field
+    // ==========================================
+
+    #[test]
+    fn test_wizard_completed_defaults_to_false() {
+        let json = r#"{"global_version": "4.0.2"}"#;
+        let config: RubynautConfig = serde_json::from_str(json).unwrap();
+        assert!(!config.wizard_completed);
+    }
+
+    #[test]
+    fn test_wizard_completed_roundtrip() {
+        let config = RubynautConfig {
+            global_version: Some("4.0.2".to_string()),
+            projects: vec![],
+            wizard_completed: true,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("wizard_completed"));
+        let parsed: RubynautConfig = serde_json::from_str(&json).unwrap();
+        assert!(parsed.wizard_completed);
+    }
+
+    #[test]
+    fn test_wizard_completed_not_serialized_when_false() {
+        let config = RubynautConfig {
+            global_version: Some("4.0.2".to_string()),
+            projects: vec![],
+            wizard_completed: false,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("wizard_completed"));
+    }
+
+    // ==========================================
+    // write_default_gems_file
+    // ==========================================
+
+    #[test]
+    fn test_write_default_gems_merges() {
+        let home = TempDir::new().unwrap();
+        std::env::set_var("HOME", home.path());
+
+        // Write initial gems
+        let gems1 = vec![("bundler".to_string(), None)];
+        write_default_gems_file(&gems1).unwrap();
+
+        // Merge new gems
+        let gems2 = vec![
+            ("bundler".to_string(), None), // should not duplicate
+            ("rails".to_string(), Some("7.2.0".to_string())),
+        ];
+        write_default_gems_file(&gems2).unwrap();
+
+        let path = rubies_dir().join("default-gems");
+        let content = fs::read_to_string(&path).unwrap();
+        let bundler_count = content.matches("bundler").count();
+        assert_eq!(bundler_count, 1, "bundler should appear exactly once");
+        assert!(content.contains("rails 7.2.0"));
     }
 }

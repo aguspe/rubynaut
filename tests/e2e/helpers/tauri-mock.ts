@@ -231,6 +231,12 @@ export async function mockTauriAPI(page: Page) {
               return "Bundle complete! 42 gems installed.";
             case "install_ruby":
               return null;
+            case "get_config":
+              return { global_version: "4.0.2", projects: [], wizard_completed: true };
+            case "set_wizard_completed":
+              return null;
+            case "get_latest_stable_version":
+              return "4.0.2";
             default:
               console.warn(`Unmocked Tauri command: ${cmd}`, args);
               return null;

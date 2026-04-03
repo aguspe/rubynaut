@@ -601,6 +601,113 @@ pub fn alias_list() -> Result<(), String> {
     Ok(())
 }
 
+pub async fn init(no_rails: bool, version_opt: Option<String>) -> Result<(), String> {
+    println!("{}", style("Rubynaut Init — Setting up your Ruby environment").green().bold());
+    println!();
+
+    // Step 1: Determine version
+    let version = match version_opt {
+        Some(v) => v,
+        None => {
+            println!("  {} Detecting latest stable Ruby version...", style("[1/6]").dim());
+            let v = rubynaut_core::get_latest_stable_version().await?;
+            println!("       Latest stable: {}", style(&v).cyan().bold());
+            v
+        }
+    };
+
+    // Step 2: Install Ruby
+    println!("  {} Installing Ruby {}...", style("[2/6]").dim(), style(&version).cyan());
+    let ruby_bin = rubynaut_core::rubies_dir().join(&version).join("bin").join("ruby");
+    if ruby_bin.exists() {
+        println!("       {} Already installed", style("skipped:").yellow());
+    } else {
+        let pb = ProgressBar::new(100);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("       {spinner:.green} [{bar:30.cyan/blue}] {percent}% {msg}")
+                .unwrap()
+                .progress_chars("=> "),
+        );
+        let pb_clone = pb.clone();
+        let progress: ProgressCallback =
+            Box::new(move |_stage: &str, percent: u8, message: &str| {
+                pb_clone.set_position(percent as u64);
+                pb_clone.set_message(message.to_string());
+            });
+        rubynaut_core::install_ruby(version.clone(), Some(progress)).await?;
+        pb.finish_and_clear();
+        println!("       {} Installed", style("done:").green());
+    }
+
+    // Step 3: Set global default
+    println!("  {} Setting global default...", style("[3/6]").dim());
+    let current = rubynaut_core::get_active_version()?.unwrap_or_default();
+    if current == version {
+        println!("       {} Already set as global", style("skipped:").yellow());
+    } else {
+        rubynaut_core::set_global_version(version.clone())?;
+        println!("       {} Global version set to {}", style("done:").green(), style(&version).cyan());
+    }
+
+    // Step 4: Install shell hook
+    println!("  {} Setting up shell integration...", style("[4/6]").dim());
+    let shell = detect_current_shell();
+    let hooks = rubynaut_core::check_shell_hook()?;
+    let already_installed = hooks.iter().any(|h| h.shell == shell && h.installed);
+    if already_installed {
+        println!("       {} Shell hook already installed for {}", style("skipped:").yellow(), shell);
+    } else {
+        match rubynaut_core::install_shell_hook(shell.clone()) {
+            Ok(msg) => println!("       {} {}", style("done:").green(), msg),
+            Err(e) => println!("       {} {} (run: rubynaut shell install)", style("warn:").yellow(), e),
+        }
+    }
+
+    // Step 5: Write default-gems file
+    println!("  {} Configuring default gems...", style("[5/6]").dim());
+    let mut default_gems: Vec<(String, Option<String>)> = vec![
+        ("bundler".to_string(), None),
+    ];
+    if !no_rails {
+        default_gems.push(("rails".to_string(), None));
+    }
+    rubynaut_core::write_default_gems_file(&default_gems)?;
+    let gem_names: Vec<&str> = default_gems.iter().map(|(n, _)| n.as_str()).collect();
+    println!("       {} default-gems: {}", style("done:").green(), gem_names.join(", "));
+
+    // Step 6: Install default gems
+    println!("  {} Installing default gems...", style("[6/6]").dim());
+    for (gem_name, gem_version) in &default_gems {
+        print!("       {} {}... ", style(">").dim(), gem_name);
+        match rubynaut_core::install_gem(version.clone(), gem_name.clone(), gem_version.clone()).await {
+            Ok(_) => println!("{}", style("installed").green()),
+            Err(e) => println!("{} ({})", style("failed").red(), e),
+        }
+    }
+
+    // Summary
+    println!();
+    println!("  {}", style("Setup complete!").green().bold());
+    println!();
+    println!("  Installed:  Ruby {}", style(&version).cyan());
+    println!("  Global:     {}", style(&version).cyan());
+    println!("  Shell hook: {} {}", style(&shell).cyan(),
+        if already_installed { "(was already installed)" } else { "(installed)" });
+    println!("  Gems:       {}", style(gem_names.join(", ")).cyan());
+    println!();
+    println!("  {}", style("Next steps:").bold());
+    println!("    ruby -e \"puts 'Hello, Ruby!'\"");
+    if !no_rails {
+        println!("    rails new my-app");
+    }
+    println!("    rubynaut list --available");
+    println!();
+    println!("  {} Restart your terminal to activate the shell hook.", style("Note:").yellow().bold());
+
+    Ok(())
+}
+
 pub async fn update() -> Result<(), String> {
     let current = env!("CARGO_PKG_VERSION");
     let repo = "aguspe/rubynaut";

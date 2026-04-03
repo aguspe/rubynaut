@@ -155,6 +155,15 @@ export async function mockTauriStateful(page: Page) {
             case "bundle_install":
               return "Bundle complete!";
 
+            case "get_config":
+              return { global_version: store.globalVersion, projects: store.trackedProjects, wizard_completed: true };
+
+            case "set_wizard_completed":
+              return null;
+
+            case "get_latest_stable_version":
+              return store.installedRubies.length > 0 ? store.installedRubies[0].version : "4.0.2";
+
             default:
               console.warn(`Unmocked: ${cmd}`, args);
               return null;
