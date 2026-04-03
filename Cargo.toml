@@ -1,0 +1,3 @@
+[workspace]
+members = ["rubynaut-core", "rubynaut-cli", "src-tauri"]
+resolver = "2"

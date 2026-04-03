@@ -1,0 +1,19 @@
+[package]
+name = "rubynaut"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "CLI tool for installing and managing Ruby versions"
+repository = "https://github.com/aguspe/rubynaut"
+
+[[bin]]
+name = "rubynaut"
+path = "src/main.rs"
+
+[dependencies]
+rubynaut-core = { path = "../rubynaut-core" }
+clap = { version = "4", features = ["derive"] }
+indicatif = "0.17"
+console = "0.15"
+tokio = { version = "1", features = ["full"] }
+serde_json = "1.0"

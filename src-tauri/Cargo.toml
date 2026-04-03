@@ -1,10 +1,10 @@
 [package]
-name = "rubynaut"
+name = "rubynaut-gui"
 version = "0.1.0"
-description = "A cross-platform GUI tool for installing and managing Ruby versions"
+description = "Rubynaut GUI — cross-platform Ruby version manager"
 authors = ["Rubynaut Contributors"]
 license = "MIT"
-repository = "https://github.com/rubynaut/rubynaut"
+repository = "https://github.com/aguspe/rubynaut"
 edition = "2021"
 rust-version = "1.77.2"
 
@@ -16,6 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.5.6", features = [] }
 
 [dependencies]
+rubynaut-core = { path = "../rubynaut-core" }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
@@ -23,10 +24,4 @@ tauri = { version = "2.10.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
-reqwest = { version = "0.12", features = ["json", "stream"] }
 tokio = { version = "1", features = ["full"] }
-dirs = "6"
-which = "7"
-
-[dev-dependencies]
-tempfile = "3"

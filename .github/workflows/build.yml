@@ -59,11 +59,10 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: ". -> target"
 
       - name: Run Rust tests
-        working-directory: src-tauri
-        run: cargo test --lib
+        run: cargo test -p rubynaut-core
 
       # macOS: Import the Apple certificate for signing (only if secret exists)
       - name: Import Apple certificate
@@ -174,6 +173,50 @@ jobs:
             src-tauri/target/release/bundle/**/*.exe
           if-no-files-found: ignore
 
+  cli-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            name: CLI-macOS-ARM64
+          - platform: macos-13
+            target: x86_64-apple-darwin
+            name: CLI-macOS-x64
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            name: CLI-Linux-x64
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: CLI-Windows-x64
+
+    runs-on: ${{ matrix.platform }}
+    name: CLI (${{ matrix.name }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Build CLI
+        run: cargo build --release -p rubynaut
+
+      - name: Upload CLI binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            target/release/rubynaut
+            target/release/rubynaut.exe
+          if-no-files-found: ignore
+
   test:
     runs-on: ubuntu-22.04
     name: Tests & Coverage
@@ -184,27 +227,17 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Run core tests
+        run: cargo test -p rubynaut-core
 
       - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin
 
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
       - name: Run tests with coverage
-        working-directory: src-tauri
-        run: cargo tarpaulin --out xml --output-dir ../coverage
+        run: cargo tarpaulin -p rubynaut-core --out xml --output-dir coverage
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4

@@ -1,15 +1,5 @@
 mod commands;
 
-use commands::doctor::{run_doctor, run_doctor_fix};
-use commands::platform::detect_platform;
-use commands::ruby::{
-    add_tracked_project, bundle_install, check_shell_hook, get_active_version,
-    get_available_rubies, get_gems_for_version, get_installed_rubies, get_project_gems,
-    get_shell_hook, get_tracked_projects, install_gem, install_ruby, install_shell_hook,
-    remove_tracked_project, scan_project, set_global_version, set_local_version, uninstall_gem,
-    uninstall_ruby,
-};
-
 use tauri_plugin_dialog::DialogExt;
 
 #[tauri::command]
@@ -43,29 +33,29 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            detect_platform,
-            get_installed_rubies,
-            get_available_rubies,
-            get_active_version,
-            set_global_version,
-            set_local_version,
-            uninstall_ruby,
-            install_ruby,
-            get_shell_hook,
-            check_shell_hook,
-            install_shell_hook,
-            get_gems_for_version,
-            install_gem,
-            uninstall_gem,
-            run_doctor,
-            run_doctor_fix,
+            commands::platform::detect_platform,
+            commands::ruby::get_installed_rubies,
+            commands::ruby::get_available_rubies,
+            commands::ruby::get_active_version,
+            commands::ruby::set_global_version,
+            commands::ruby::set_local_version,
+            commands::ruby::uninstall_ruby,
+            commands::ruby::install_ruby,
+            commands::ruby::get_shell_hook,
+            commands::ruby::check_shell_hook,
+            commands::ruby::install_shell_hook,
+            commands::ruby::get_gems_for_version,
+            commands::ruby::install_gem,
+            commands::ruby::uninstall_gem,
+            commands::ruby::get_project_gems,
+            commands::ruby::bundle_install,
+            commands::ruby::scan_project,
+            commands::ruby::get_tracked_projects,
+            commands::ruby::add_tracked_project,
+            commands::ruby::remove_tracked_project,
+            commands::doctor::run_doctor,
+            commands::doctor::run_doctor_fix,
             pick_folder,
-            scan_project,
-            get_tracked_projects,
-            add_tracked_project,
-            remove_tracked_project,
-            bundle_install,
-            get_project_gems,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

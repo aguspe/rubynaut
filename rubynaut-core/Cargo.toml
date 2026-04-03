@@ -1,0 +1,19 @@
+[package]
+name = "rubynaut-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Core library for Rubynaut — Ruby version manager"
+repository = "https://github.com/aguspe/rubynaut"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dirs = "6"
+which = "7"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+tokio = { version = "1", features = ["full"] }
+log = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
