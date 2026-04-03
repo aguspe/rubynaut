@@ -719,9 +719,17 @@ pub fn fallback_versions() -> Vec<String> {
 }
 
 pub async fn fetch_versions_from_github() -> Result<Vec<String>, String> {
-    let client = reqwest::Client::new();
+    let client = build_http_client()?;
     let mut all_versions: Vec<String> = Vec::new();
     let mut page = 1u32;
+
+    // Engine prefixes to look for in release tags
+    let engine_prefixes: &[(&str, &str)] = &[
+        ("ruby-", ""),                       // CRuby: "ruby-4.0.2" → "4.0.2"
+        ("jruby-", "jruby-"),                // JRuby: "jruby-9.4.9.0" → "jruby-9.4.9.0"
+        ("truffleruby+graalvm-", "truffleruby+graalvm-"), // TruffleRuby+GraalVM
+        ("truffleruby-", "truffleruby-"),    // TruffleRuby
+    ];
 
     loop {
         let url = format!(
@@ -750,16 +758,20 @@ pub async fn fetch_versions_from_github() -> Result<Vec<String>, String> {
 
         for release in &releases {
             let tag = &release.tag_name;
-            if let Some(version) = tag.strip_prefix("ruby-") {
-                let is_stable = version
-                    .chars()
-                    .next()
-                    .map(|c| c.is_ascii_digit())
-                    .unwrap_or(false)
-                    && !version.contains("preview")
-                    && !version.contains("-rc");
-                if is_stable {
-                    all_versions.push(version.to_string());
+            for &(prefix, output_prefix) in engine_prefixes {
+                if let Some(base_version) = tag.strip_prefix(prefix) {
+                    let is_stable = base_version
+                        .chars()
+                        .next()
+                        .map(|c| c.is_ascii_digit())
+                        .unwrap_or(false)
+                        && !base_version.contains("preview")
+                        && !base_version.contains("-rc");
+                    if is_stable {
+                        let full_version = format!("{output_prefix}{base_version}");
+                        all_versions.push(full_version);
+                    }
+                    break; // Only match the first prefix
                 }
             }
         }
@@ -767,7 +779,11 @@ pub async fn fetch_versions_from_github() -> Result<Vec<String>, String> {
         page += 1;
     }
 
-    all_versions.sort_by(|a, b| version_cmp(b, a));
+    all_versions.sort_by(|a, b| {
+        let (ea, va, _) = parse_engine(a);
+        let (eb, vb, _) = parse_engine(b);
+        ea.cmp(eb).then_with(|| version_cmp(vb, va))
+    });
     Ok(all_versions)
 }
 
@@ -825,19 +841,184 @@ pub fn version_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 }
 
 /// Validate that a version string is safe for use in URLs and filesystem paths.
-/// Accepts formats like "4.0.2", "3.3.6", "2.0.0-p648", "1.9.3-p551".
+/// Accepts formats like "4.0.2", "3.3.6", "2.0.0-p648", "1.9.3-p551",
+/// "jruby-9.4.9.0", "truffleruby-24.1.1", "truffleruby+graalvm-24.1.1".
 pub fn is_valid_version(version: &str) -> bool {
-    if version.is_empty() || version.len() > 20 {
+    if version.is_empty() || version.len() > 40 {
         return false;
     }
-    // Must start with a digit
-    if !version.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+    // Strip known engine prefixes for validation
+    let numeric_part = version
+        .strip_prefix("jruby-")
+        .or_else(|| version.strip_prefix("truffleruby+graalvm-"))
+        .or_else(|| version.strip_prefix("truffleruby-"))
+        .unwrap_or(version);
+
+    if numeric_part.is_empty() {
         return false;
     }
-    // Only allow digits, dots, and -p suffix
-    version.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-' || c == 'p')
-        && !version.contains("..")
-        && !version.contains("--")
+    // Numeric part must start with a digit
+    if !numeric_part.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        return false;
+    }
+    // Only allow digits, dots, and -p suffix in the numeric part
+    numeric_part.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-' || c == 'p')
+        && !numeric_part.contains("..")
+        && !numeric_part.contains("--")
+}
+
+/// Determine the engine type and base version from a version string.
+/// Returns (engine_prefix, version, tag_prefix) for URL construction.
+pub fn parse_engine(version: &str) -> (&str, &str, &str) {
+    if let Some(v) = version.strip_prefix("jruby-") {
+        ("jruby", v, "jruby")
+    } else if let Some(v) = version.strip_prefix("truffleruby+graalvm-") {
+        ("truffleruby+graalvm", v, "truffleruby+graalvm")
+    } else if let Some(v) = version.strip_prefix("truffleruby-") {
+        ("truffleruby", v, "truffleruby")
+    } else {
+        ("ruby", version, "ruby")
+    }
+}
+
+/// Build a reqwest::Client respecting proxy configuration from config.
+pub fn build_http_client() -> Result<reqwest::Client, String> {
+    let config = read_config();
+    let mut builder = reqwest::Client::builder();
+    if let Some(proxy_url) = &config.http_proxy {
+        if !proxy_url.is_empty() {
+            let proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| format!("Invalid proxy URL: {e}"))?;
+            builder = builder.proxy(proxy);
+        }
+    }
+    builder.build().map_err(|e| format!("Failed to build HTTP client: {e}"))
+}
+
+/// Get the base download URL, respecting mirror_url from config.
+/// Default: "https://github.com/ruby/ruby-builder"
+pub fn download_base_url() -> String {
+    let config = read_config();
+    config.mirror_url
+        .filter(|u| !u.is_empty())
+        .unwrap_or_else(|| "https://github.com/ruby/ruby-builder".to_string())
+}
+
+/// Install a Ruby version from a local .tar.gz archive file.
+/// Skips download and checksum — goes straight to extract, fix paths, verify.
+pub async fn install_ruby_from_archive(
+    version: String,
+    archive_path: String,
+    on_progress: Option<ProgressCallback>,
+) -> Result<(), String> {
+    if !is_valid_version(&version) {
+        return Err(format!("Invalid version format: {version}"));
+    }
+
+    let archive = PathBuf::from(&archive_path);
+    if !archive.exists() {
+        return Err(format!("Archive not found: {archive_path}"));
+    }
+    if !archive_path.ends_with(".tar.gz") && !archive_path.ends_with(".tgz") {
+        return Err("Archive must be a .tar.gz or .tgz file".to_string());
+    }
+
+    let target_dir = rubies_dir().join(&version);
+    if target_dir.join("bin").join("ruby").exists() {
+        return Err(format!("Ruby {version} is already installed"));
+    }
+
+    fs::create_dir_all(&rubies_dir())
+        .map_err(|e| format!("Failed to create rubies directory: {e}"))?;
+
+    if let Some(cb) = &on_progress {
+        cb("extract", 20, "Extracting archive...");
+    }
+
+    let tmp_dir = rubies_dir().join(".tmp-install");
+    let _ = fs::remove_dir_all(&tmp_dir);
+    fs::create_dir_all(&tmp_dir)
+        .map_err(|e| format!("Failed to create temp dir: {e}"))?;
+
+    let extract_output = Command::new("tar")
+        .args(["xzf", &archive_path, "-C", &tmp_dir.to_string_lossy()])
+        .output()
+        .map_err(|e| format!("Extraction failed: {e}"))?;
+
+    if !extract_output.status.success() {
+        let stderr = String::from_utf8_lossy(&extract_output.stderr);
+        let _ = fs::remove_dir_all(&tmp_dir);
+        return Err(format!("Extraction failed: {stderr}"));
+    }
+
+    if let Some(cb) = &on_progress {
+        cb("extract", 50, "Organizing files...");
+    }
+
+    let bin_dir = find_ruby_bin_dir(&tmp_dir)
+        .ok_or("Could not find ruby binary in extracted archive")?;
+    let ruby_root = bin_dir.parent().ok_or("Unexpected archive structure")?;
+
+    if target_dir.exists() {
+        fs::remove_dir_all(&target_dir)
+            .map_err(|e| format!("Failed to clean target: {e}"))?;
+    }
+
+    fs::rename(ruby_root, &target_dir).or_else(|_| {
+        copy_dir_recursive(ruby_root, &target_dir)
+    }).map_err(|e| format!("Failed to move Ruby to final location: {e}"))?;
+
+    let _ = fs::remove_dir_all(&tmp_dir);
+    let gems_dir = rubies_dir().join("gems").join(&version);
+    let _ = fs::create_dir_all(&gems_dir);
+
+    if cfg!(target_os = "macos") {
+        if let Some(cb) = &on_progress {
+            cb("verify", 70, "Fixing library paths...");
+        }
+        fix_macos_dylib_paths(&target_dir, &version)?;
+    }
+    if cfg!(target_os = "linux") {
+        if let Some(cb) = &on_progress {
+            cb("verify", 70, "Fixing library paths...");
+        }
+        fix_linux_rpath(&target_dir)?;
+    }
+    fix_shebangs(&target_dir)?;
+
+    if let Some(cb) = &on_progress {
+        cb("verify", 85, "Verifying installation...");
+    }
+
+    let ruby_bin = target_dir.join("bin").join("ruby");
+    let verify = Command::new(&ruby_bin)
+        .arg("--version")
+        .output()
+        .map_err(|e| format!("Verification failed: {e}"))?;
+
+    if !verify.status.success() {
+        let stderr = String::from_utf8_lossy(&verify.stderr);
+        let _ = fs::remove_dir_all(&target_dir);
+        return Err(format!("Ruby binary failed verification: {stderr}"));
+    }
+
+    let ruby_version_output = String::from_utf8_lossy(&verify.stdout).trim().to_string();
+
+    let default_gems = read_default_gems();
+    if !default_gems.is_empty() {
+        if let Some(cb) = &on_progress {
+            cb("gems", 95, &format!("Installing {} default gem(s)...", default_gems.len()));
+        }
+        for (gem_name, gem_version) in &default_gems {
+            let _ = install_gem(version.clone(), gem_name.clone(), gem_version.clone()).await;
+        }
+    }
+
+    if let Some(cb) = &on_progress {
+        cb("done", 100, &format!("Installed: {ruby_version_output}"));
+    }
+
+    Ok(())
 }
 
 /// Compute the SHA256 hex digest of a byte slice.
@@ -904,7 +1085,7 @@ pub fn read_default_gems() -> Vec<(String, Option<String>)> {
 
 pub async fn install_ruby(version: String, on_progress: Option<ProgressCallback>) -> Result<(), String> {
     if !is_valid_version(&version) {
-        return Err(format!("Invalid version format: {version}. Expected format like 4.0.2 or 2.0.0-p648"));
+        return Err(format!("Invalid version format: {version}. Expected format like 4.0.2, jruby-9.4.9.0, or truffleruby-24.1.1"));
     }
 
     let target_dir = rubies_dir().join(&version);
@@ -915,7 +1096,7 @@ pub async fn install_ruby(version: String, on_progress: Option<ProgressCallback>
     fs::create_dir_all(&rubies_dir())
         .map_err(|e| format!("Failed to create rubies directory: {e}"))?;
 
-    // Determine download URL based on platform
+    // Determine download URL based on platform and engine
     let os = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
 
@@ -927,16 +1108,18 @@ pub async fn install_ruby(version: String, on_progress: Option<ProgressCallback>
         _ => return Err(format!("Unsupported platform: {os}-{arch}. Windows requires RubyInstaller.")),
     };
 
+    let (_, base_version, tag_prefix) = parse_engine(&version);
+    let base_url = download_base_url();
     let url = format!(
-        "https://github.com/ruby/ruby-builder/releases/download/ruby-{version}/ruby-{version}-{platform_tag}.tar.gz"
+        "{base_url}/releases/download/{tag_prefix}-{base_version}/{tag_prefix}-{base_version}-{platform_tag}.tar.gz"
     );
 
     // Stage 1: Download
     if let Some(cb) = &on_progress {
-        cb("download", 10, &format!("Downloading Ruby {version}..."));
+        cb("download", 10, &format!("Downloading {version}..."));
     }
 
-    let client = reqwest::Client::new();
+    let client = build_http_client()?;
     let response = client
         .get(&url)
         .send()
@@ -1430,6 +1613,16 @@ rubynaut_switch() {{
     if [ -d /opt/homebrew/lib ]; then
       export DYLD_FALLBACK_LIBRARY_PATH="{rubies_path}/$target_version/lib:/opt/homebrew/lib:${{DYLD_FALLBACK_LIBRARY_PATH:-/usr/local/lib:/usr/lib}}"
     fi
+  elif [ -n "$target_version" ] && ! [ -d "{rubies_path}/$target_version/bin" ]; then
+    # Auto-install: version required but not installed
+    if command -v rubynaut >/dev/null 2>&1; then
+      echo "rubynaut: Ruby $target_version is not installed."
+      printf "Install it now? [y/N] "
+      read -r answer
+      if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+        rubynaut install "$target_version" && rubynaut_switch
+      fi
+    fi
   fi
 }}
 
@@ -1475,6 +1668,15 @@ function rubynaut_switch --on-variable PWD
     set -gx GEM_HOME "{rubies_path}/gems/$target_version"
     set -gx GEM_PATH "$GEM_HOME:{rubies_path}/$target_version/lib/ruby/gems/"(string replace -r '\.\d+$' '.0' $target_version)
     set -gx PATH "{rubies_path}/$target_version/bin" "$GEM_HOME/bin" $PATH
+  else if test -n "$target_version"; and not test -d "{rubies_path}/$target_version/bin"
+    # Auto-install: version required but not installed
+    if command -v rubynaut >/dev/null 2>&1
+      echo "rubynaut: Ruby $target_version is not installed."
+      read -P "Install it now? [y/N] " answer
+      if test "$answer" = "y" -o "$answer" = "Y"
+        rubynaut install "$target_version"; and rubynaut_switch
+      end
+    end
   end
 end
 
@@ -1600,6 +1802,7 @@ mod tests {
                 path: "/tmp/myproject".to_string(),
                 name: "myproject".to_string(),
             }],
+            ..Default::default()
         };
         let json = serde_json::to_string(&config).unwrap();
         let parsed: RubynautConfig = serde_json::from_str(&json).unwrap();
@@ -2315,6 +2518,7 @@ DEPENDENCIES
         let config = RubynautConfig {
             global_version: Some("4.0.2".to_string()),
             projects: vec![],
+            ..Default::default()
         };
         let json = serde_json::to_string_pretty(&config).unwrap();
         let parsed: RubynautConfig = serde_json::from_str(&json).unwrap();
@@ -2330,6 +2534,7 @@ DEPENDENCIES
                 path: "/home/user/app".to_string(),
                 name: "app".to_string(),
             }],
+            ..Default::default()
         };
         let json = serde_json::to_string(&config).unwrap();
         let parsed: RubynautConfig = serde_json::from_str(&json).unwrap();
@@ -2571,7 +2776,8 @@ PLATFORMS
 
     #[test]
     fn test_is_valid_version_rejects_too_long() {
-        assert!(!is_valid_version("1.2.3.4.5.6.7.8.9.10.11"));
+        // Over 40 characters should be rejected
+        assert!(!is_valid_version("1.2.3.4.5.6.7.8.9.10.11.12.13.14.15.16.17.18"));
     }
 
     #[test]
@@ -2703,5 +2909,187 @@ PLATFORMS
             .collect();
 
         assert!(parsed.is_empty());
+    }
+
+    // ==========================================
+    // parse_engine
+    // ==========================================
+
+    #[test]
+    fn test_parse_engine_cruby() {
+        let (engine, version, tag) = parse_engine("4.0.2");
+        assert_eq!(engine, "ruby");
+        assert_eq!(version, "4.0.2");
+        assert_eq!(tag, "ruby");
+    }
+
+    #[test]
+    fn test_parse_engine_jruby() {
+        let (engine, version, tag) = parse_engine("jruby-9.4.9.0");
+        assert_eq!(engine, "jruby");
+        assert_eq!(version, "9.4.9.0");
+        assert_eq!(tag, "jruby");
+    }
+
+    #[test]
+    fn test_parse_engine_truffleruby() {
+        let (engine, version, tag) = parse_engine("truffleruby-24.1.1");
+        assert_eq!(engine, "truffleruby");
+        assert_eq!(version, "24.1.1");
+        assert_eq!(tag, "truffleruby");
+    }
+
+    #[test]
+    fn test_parse_engine_truffleruby_graalvm() {
+        let (engine, version, tag) = parse_engine("truffleruby+graalvm-24.1.1");
+        assert_eq!(engine, "truffleruby+graalvm");
+        assert_eq!(version, "24.1.1");
+        assert_eq!(tag, "truffleruby+graalvm");
+    }
+
+    #[test]
+    fn test_parse_engine_cruby_with_patch() {
+        let (engine, version, tag) = parse_engine("2.0.0-p648");
+        assert_eq!(engine, "ruby");
+        assert_eq!(version, "2.0.0-p648");
+        assert_eq!(tag, "ruby");
+    }
+
+    // ==========================================
+    // is_valid_version with JRuby/TruffleRuby
+    // ==========================================
+
+    #[test]
+    fn test_is_valid_version_jruby() {
+        assert!(is_valid_version("jruby-9.4.9.0"));
+        assert!(is_valid_version("jruby-9.3.0.0"));
+    }
+
+    #[test]
+    fn test_is_valid_version_truffleruby() {
+        assert!(is_valid_version("truffleruby-24.1.1"));
+        assert!(is_valid_version("truffleruby+graalvm-24.1.1"));
+    }
+
+    #[test]
+    fn test_is_valid_version_rejects_bad_engine_prefix() {
+        assert!(!is_valid_version("mruby-3.0.0")); // not a supported prefix
+        assert!(!is_valid_version("jruby-")); // empty version
+        assert!(!is_valid_version("truffleruby-")); // empty version
+    }
+
+    // ==========================================
+    // download_base_url
+    // ==========================================
+
+    #[test]
+    fn test_download_base_url_default() {
+        let url = download_base_url();
+        assert!(url.contains("github.com/ruby/ruby-builder"));
+    }
+
+    // ==========================================
+    // build_http_client
+    // ==========================================
+
+    #[test]
+    fn test_build_http_client_succeeds() {
+        let client = build_http_client();
+        assert!(client.is_ok());
+    }
+
+    // ==========================================
+    // install_ruby_from_archive validation
+    // ==========================================
+
+    #[tokio::test]
+    async fn test_install_from_archive_rejects_missing_file() {
+        let result = install_ruby_from_archive(
+            "4.0.2".to_string(),
+            "/nonexistent/ruby.tar.gz".to_string(),
+            None,
+        ).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_install_from_archive_rejects_wrong_extension() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("ruby.zip");
+        fs::write(&file, "fake").unwrap();
+
+        let result = install_ruby_from_archive(
+            "4.0.2".to_string(),
+            file.to_string_lossy().to_string(),
+            None,
+        ).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains(".tar.gz"));
+    }
+
+    #[tokio::test]
+    async fn test_install_from_archive_rejects_invalid_version() {
+        let result = install_ruby_from_archive(
+            "../evil".to_string(),
+            "/some/file.tar.gz".to_string(),
+            None,
+        ).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid version"));
+    }
+
+    // ==========================================
+    // Config with mirror/proxy fields
+    // ==========================================
+
+    #[test]
+    fn test_config_with_mirror_and_proxy() {
+        let json = r#"{"global_version": "4.0.2", "mirror_url": "https://mirror.example.com/ruby-builder", "http_proxy": "http://proxy:8080"}"#;
+        let config: RubynautConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.mirror_url, Some("https://mirror.example.com/ruby-builder".to_string()));
+        assert_eq!(config.http_proxy, Some("http://proxy:8080".to_string()));
+    }
+
+    #[test]
+    fn test_config_without_mirror_proxy_defaults_to_none() {
+        let json = r#"{"global_version": "4.0.2"}"#;
+        let config: RubynautConfig = serde_json::from_str(json).unwrap();
+        assert!(config.mirror_url.is_none());
+        assert!(config.http_proxy.is_none());
+    }
+
+    #[test]
+    fn test_config_roundtrip_with_mirror() {
+        let config = RubynautConfig {
+            global_version: Some("4.0.2".to_string()),
+            projects: vec![],
+            mirror_url: Some("https://mirror.example.com".to_string()),
+            http_proxy: None,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: RubynautConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.mirror_url, config.mirror_url);
+        assert!(parsed.http_proxy.is_none());
+        // http_proxy should not appear in JSON when None (skip_serializing_if)
+        assert!(!json.contains("http_proxy"));
+    }
+
+    // ==========================================
+    // Shell hooks contain auto-install
+    // ==========================================
+
+    #[test]
+    fn test_posix_hook_contains_auto_install() {
+        let hook = generate_posix_hook("/home/user/.rubies");
+        assert!(hook.contains("Install it now?"));
+        assert!(hook.contains("rubynaut install"));
+    }
+
+    #[test]
+    fn test_fish_hook_contains_auto_install() {
+        let hook = generate_fish_hook("/home/user/.rubies");
+        assert!(hook.contains("Install it now?"));
+        assert!(hook.contains("rubynaut install"));
     }
 }

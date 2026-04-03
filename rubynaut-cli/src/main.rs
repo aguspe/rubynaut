@@ -17,10 +17,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Install a Ruby version
+    /// Install a Ruby version (supports CRuby, JRuby, TruffleRuby)
     Install {
-        /// Ruby version to install (e.g. 4.0.2, 3.3.6)
+        /// Ruby version to install (e.g. 4.0.2, jruby-9.4.9.0, truffleruby-24.1.1)
         version: String,
+        /// Install from a local .tar.gz archive instead of downloading
+        #[arg(long)]
+        from_file: Option<String>,
     },
     /// Uninstall a Ruby version
     Uninstall {
@@ -80,6 +83,29 @@ enum Commands {
         #[arg(default_value = "ruby")]
         command: String,
     },
+    /// Configure Rubynaut settings
+    #[command(subcommand)]
+    Config(ConfigCommands),
+}
+
+#[derive(Subcommand)]
+enum ConfigCommands {
+    /// Set a custom mirror URL for ruby-builder downloads
+    SetMirror {
+        /// Mirror URL (e.g. https://my-mirror.example.com/ruby-builder)
+        url: String,
+    },
+    /// Set an HTTP proxy for all network requests
+    SetProxy {
+        /// Proxy URL (e.g. http://proxy.corp:8080)
+        url: String,
+    },
+    /// Clear the mirror URL (use default)
+    ClearMirror,
+    /// Clear the proxy setting
+    ClearProxy,
+    /// Show current configuration
+    Show,
 }
 
 #[derive(Subcommand)]
@@ -147,7 +173,7 @@ async fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Install { version } => commands::install(version).await,
+        Commands::Install { version, from_file } => commands::install(version, from_file).await,
         Commands::Uninstall { version } => commands::uninstall(version),
         Commands::List { available } => commands::list(available).await,
         Commands::Use { version, local } => commands::use_version(version, local),
@@ -173,6 +199,13 @@ async fn main() {
         Commands::Platform => commands::platform(),
         Commands::Exec { version, command } => commands::exec(version, command),
         Commands::Which { command } => commands::which_cmd(command),
+        Commands::Config(sub) => match sub {
+            ConfigCommands::SetMirror { url } => commands::config_set_mirror(url),
+            ConfigCommands::SetProxy { url } => commands::config_set_proxy(url),
+            ConfigCommands::ClearMirror => commands::config_clear_mirror(),
+            ConfigCommands::ClearProxy => commands::config_clear_proxy(),
+            ConfigCommands::Show => commands::config_show(),
+        },
     };
 
     if let Err(e) = result {

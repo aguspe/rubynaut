@@ -4,9 +4,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 use rubynaut_core::{self, ProgressCallback};
 use std::sync::{Arc, Mutex};
 
-pub async fn install(version: String) -> Result<(), String> {
+pub async fn install(version: String, from_file: Option<String>) -> Result<(), String> {
     println!(
-        "{} Ruby {}...",
+        "{} {}...",
         style("Installing").green().bold(),
         style(&version).cyan()
     );
@@ -26,9 +26,13 @@ pub async fn install(version: String) -> Result<(), String> {
             pb_clone.set_message(message.to_string());
         });
 
-    rubynaut_core::install_ruby(version.clone(), Some(progress)).await?;
+    if let Some(archive_path) = from_file {
+        rubynaut_core::install_ruby_from_archive(version.clone(), archive_path, Some(progress)).await?;
+    } else {
+        rubynaut_core::install_ruby(version.clone(), Some(progress)).await?;
+    }
 
-    pb.finish_with_message(format!("Ruby {} installed!", version));
+    pb.finish_with_message(format!("{} installed!", version));
     Ok(())
 }
 
@@ -483,6 +487,49 @@ pub fn exec(version: String, command: Vec<String>) -> Result<(), String> {
     if !status.success() {
         std::process::exit(status.code().unwrap_or(1));
     }
+    Ok(())
+}
+
+pub fn config_set_mirror(url: String) -> Result<(), String> {
+    let mut config = rubynaut_core::read_config();
+    config.mirror_url = Some(url.clone());
+    rubynaut_core::write_config(&config)?;
+    println!("{} Mirror URL set to {}", style("done:").green().bold(), style(&url).cyan());
+    Ok(())
+}
+
+pub fn config_set_proxy(url: String) -> Result<(), String> {
+    let mut config = rubynaut_core::read_config();
+    config.http_proxy = Some(url.clone());
+    rubynaut_core::write_config(&config)?;
+    println!("{} HTTP proxy set to {}", style("done:").green().bold(), style(&url).cyan());
+    Ok(())
+}
+
+pub fn config_clear_mirror() -> Result<(), String> {
+    let mut config = rubynaut_core::read_config();
+    config.mirror_url = None;
+    rubynaut_core::write_config(&config)?;
+    println!("{} Mirror URL cleared (using default)", style("done:").green().bold());
+    Ok(())
+}
+
+pub fn config_clear_proxy() -> Result<(), String> {
+    let mut config = rubynaut_core::read_config();
+    config.http_proxy = None;
+    rubynaut_core::write_config(&config)?;
+    println!("{} HTTP proxy cleared", style("done:").green().bold());
+    Ok(())
+}
+
+pub fn config_show() -> Result<(), String> {
+    let config = rubynaut_core::read_config();
+    println!("{}", style("Rubynaut Configuration").bold());
+    println!("  Config file:  {}", style(rubynaut_core::config_path().display()).dim());
+    println!("  Global Ruby:  {}", style(config.global_version.as_deref().unwrap_or("(none)")).cyan());
+    println!("  Mirror URL:   {}", style(config.mirror_url.as_deref().unwrap_or("(default: github.com/ruby/ruby-builder)")).cyan());
+    println!("  HTTP Proxy:   {}", style(config.http_proxy.as_deref().unwrap_or("(none)")).cyan());
+    println!("  Projects:     {}", style(format!("{} tracked", config.projects.len())).cyan());
     Ok(())
 }
 

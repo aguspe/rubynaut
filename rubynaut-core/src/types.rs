@@ -21,6 +21,14 @@ pub struct RubynautConfig {
     pub global_version: Option<String>,
     #[serde(default)]
     pub projects: Vec<TrackedProject>,
+    /// Custom mirror URL for ruby-builder downloads.
+    /// Replaces "https://github.com/ruby/ruby-builder" in download URLs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mirror_url: Option<String>,
+    /// HTTP proxy URL (e.g. "http://proxy.corp:8080").
+    /// Used for all network requests (downloads and API calls).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_proxy: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
