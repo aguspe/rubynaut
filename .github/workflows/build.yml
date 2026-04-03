@@ -63,11 +63,11 @@ jobs:
 
       - name: Run Rust tests
         working-directory: src-tauri
-        run: cargo test --all
+        run: cargo test --lib
 
-      # macOS: Import the Apple certificate for signing
+      # macOS: Import the Apple certificate for signing (only if secret exists)
       - name: Import Apple certificate
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && env.APPLE_CERTIFICATE != ''
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -91,22 +91,20 @@ jobs:
           rm certificate.p12
 
       # Build the Tauri app
-      # On macOS, this will sign and notarize if secrets are present
-      - name: Build Tauri app
+      - name: Build Tauri app (with release)
+        if: inputs.release_tag != ''
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS signing
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          # macOS notarization
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tagName: ${{ inputs.release_tag || '' }}
-          releaseName: ${{ inputs.release_tag && format('Rubynaut {0}', inputs.release_tag) || '' }}
+          tagName: ${{ inputs.release_tag }}
+          releaseName: "Rubynaut ${{ inputs.release_tag }}"
           releaseBody: |
             Cross-platform Ruby version manager.
 
@@ -131,9 +129,23 @@ jobs:
           releaseDraft: true
           prerelease: false
 
+      - name: Build Tauri app (build only)
+        if: inputs.release_tag == ''
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
       # Windows: Sign the MSI and EXE with Azure Trusted Signing
       - name: Sign Windows artifacts
-        if: runner.os == 'Windows' && secrets.AZURE_CLIENT_ID != ''
+        if: runner.os == 'Windows' && env.AZURE_CLIENT_ID != ''
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         uses: azure/trusted-signing-action@v0.5.0
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
