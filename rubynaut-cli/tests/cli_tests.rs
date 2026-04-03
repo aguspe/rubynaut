@@ -322,3 +322,28 @@ fn test_init_version_flag_accepted() {
         .success()
         .stdout(predicate::str::contains("--version"));
 }
+
+// ==========================================
+// Wizard command
+// ==========================================
+
+#[test]
+fn test_wizard_resets_flag() {
+    let tmp = TempDir::new().unwrap();
+    rubynaut()
+        .args(["wizard"])
+        .env("HOME", tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Wizard reset"))
+        .stdout(predicate::str::contains("rubynaut init"));
+}
+
+#[test]
+fn test_wizard_help() {
+    rubynaut()
+        .args(["wizard", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("wizard"));
+}

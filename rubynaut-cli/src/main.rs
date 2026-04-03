@@ -103,6 +103,8 @@ enum Commands {
         #[arg(long)]
         version: Option<String>,
     },
+    /// Reset and re-launch the Getting Started wizard in the GUI
+    Wizard,
 }
 
 #[derive(Subcommand)]
@@ -248,6 +250,7 @@ async fn main() {
         },
         Commands::Update => commands::update().await,
         Commands::Init { no_rails, version } => commands::init(no_rails, version).await,
+        Commands::Wizard => commands::wizard(),
     };
 
     if let Err(e) = result {

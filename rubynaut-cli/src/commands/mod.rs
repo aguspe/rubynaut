@@ -708,6 +708,21 @@ pub async fn init(no_rails: bool, version_opt: Option<String>) -> Result<(), Str
     Ok(())
 }
 
+pub fn wizard() -> Result<(), String> {
+    let mut config = rubynaut_core::read_config();
+    config.wizard_completed = false;
+    rubynaut_core::write_config(&config)?;
+
+    println!("{} Wizard reset.", style("done:").green().bold());
+    println!();
+    println!("  The Getting Started wizard will appear next time you open the Rubynaut desktop app.");
+    println!("  Open it now with: {}", style("open -a Rubynaut").cyan());
+    println!();
+    println!("  Or run {} for CLI-based setup.", style("rubynaut init").cyan());
+
+    Ok(())
+}
+
 pub async fn update() -> Result<(), String> {
     let current = env!("CARGO_PKG_VERSION");
     let repo = "aguspe/rubynaut";
