@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   build:
+    needs: [test, e2e]
     strategy:
       fail-fast: false
       matrix:
@@ -62,7 +63,7 @@ jobs:
           workspaces: ". -> target"
 
       - name: Run Rust tests
-        run: cargo test -p rubynaut-core
+        run: cargo test --workspace
 
       # macOS: Import the Apple certificate for signing (only if secret exists)
       - name: Import Apple certificate
@@ -174,6 +175,7 @@ jobs:
           if-no-files-found: ignore
 
   cli-build:
+    needs: [test, e2e]
     strategy:
       fail-fast: false
       matrix:
@@ -230,8 +232,13 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
 
-      - name: Run core tests
-        run: cargo test -p rubynaut-core
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev
+
+      - name: Run workspace tests
+        run: cargo test --workspace
 
       - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin
@@ -256,6 +263,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm install

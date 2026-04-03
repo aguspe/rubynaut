@@ -91,7 +91,7 @@
           <div class="empty-state">
             <div class="empty-gem"><img src="icons/rubynaut-logo.svg" alt=""></div>
             <p>No Ruby versions installed yet</p>
-            <button class="btn btn-primary" onclick="switchTab('install')">Install Ruby</button>
+            <button class="btn btn-primary" data-action="switch-tab" data-tab="install">Install Ruby</button>
           </div>
         </div>
 
@@ -132,7 +132,7 @@
         </div>
 
         <div class="project-open-area" id="project-open-area">
-          <button class="btn btn-primary btn-large" onclick="openProject()">
+          <button class="btn btn-primary btn-large" data-action="open-project">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
               <line x1="12" y1="11" x2="12" y2="17"/>
@@ -161,7 +161,7 @@
         </div>
 
         <div class="doctor-actions">
-          <button class="btn btn-primary" id="run-doctor-btn" onclick="runDoctor()">
+          <button class="btn btn-primary" id="run-doctor-btn" data-action="run-doctor">
             Run Diagnostics
           </button>
         </div>
@@ -196,7 +196,7 @@
                 <option value="fish">Fish (~/.config/fish/conf.d/rubynaut.fish)</option>
                 <option value="powershell">PowerShell ($PROFILE)</option>
               </select>
-              <button class="btn btn-secondary" onclick="showShellHook()">Show Hook</button>
+              <button class="btn btn-secondary" data-action="show-shell-hook">Show Hook</button>
             </div>
             <pre id="shell-hook-preview" class="code-preview hidden"></pre>
           </div>
@@ -209,11 +209,11 @@
             <p>A cross-platform GUI tool for installing and managing Ruby versions.</p>
             <p>Licensed under MIT. Open source for the Ruby community.</p>
             <p class="about-links">
-              <a href="#" class="link" onclick="openExternal('https://github.com/rubynaut/rubynaut')">GitHub</a>
+              <a href="#" class="link" data-action="open-external" data-url="https://github.com/rubynaut/rubynaut">GitHub</a>
               &middot;
-              <a href="#" class="link" onclick="openExternal('https://github.com/rubynaut/rubynaut/issues')">Report Issue</a>
+              <a href="#" class="link" data-action="open-external" data-url="https://github.com/rubynaut/rubynaut/issues">Report Issue</a>
               &middot;
-              <a href="#" class="link" onclick="openExternal('https://github.com/rubynaut/rubynaut/blob/main/CONTRIBUTING.md')">Contribute</a>
+              <a href="#" class="link" data-action="open-external" data-url="https://github.com/rubynaut/rubynaut/blob/main/CONTRIBUTING.md">Contribute</a>
             </p>
           </div>
         </div>

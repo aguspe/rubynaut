@@ -96,6 +96,9 @@ pub fn get_active_version() -> Result<Option<String>, String> {
 }
 
 pub fn set_global_version(version: String) -> Result<(), String> {
+    if !is_valid_version(&version) {
+        return Err(format!("Invalid version format: {version}"));
+    }
     let ruby_path = rubies_dir().join(&version).join("bin").join("ruby");
     if !ruby_path.exists() {
         return Err(format!("Ruby {version} is not installed"));
@@ -106,6 +109,9 @@ pub fn set_global_version(version: String) -> Result<(), String> {
 }
 
 pub fn set_local_version(path: String, version: String) -> Result<(), String> {
+    if !is_valid_version(&version) {
+        return Err(format!("Invalid version format: {version}"));
+    }
     let ruby_path = rubies_dir().join(&version).join("bin").join("ruby");
     if !ruby_path.exists() {
         return Err(format!("Ruby {version} is not installed"));
@@ -817,7 +823,27 @@ pub fn version_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     va.cmp(&vb)
 }
 
+/// Validate that a version string is safe for use in URLs and filesystem paths.
+/// Accepts formats like "4.0.2", "3.3.6", "2.0.0-p648", "1.9.3-p551".
+pub fn is_valid_version(version: &str) -> bool {
+    if version.is_empty() || version.len() > 20 {
+        return false;
+    }
+    // Must start with a digit
+    if !version.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        return false;
+    }
+    // Only allow digits, dots, and -p suffix
+    version.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-' || c == 'p')
+        && !version.contains("..")
+        && !version.contains("--")
+}
+
 pub async fn install_ruby(version: String, on_progress: Option<ProgressCallback>) -> Result<(), String> {
+    if !is_valid_version(&version) {
+        return Err(format!("Invalid version format: {version}. Expected format like 4.0.2 or 2.0.0-p648"));
+    }
+
     let target_dir = rubies_dir().join(&version);
     if target_dir.join("bin").join("ruby").exists() {
         return Err(format!("Ruby {version} is already installed"));
@@ -1864,5 +1890,593 @@ DEPENDENCIES
         let cloned = project.clone();
         assert_eq!(cloned.path, project.path);
         assert_eq!(cloned.name, project.name);
+    }
+
+    // ==========================================
+    // find_ruby_bin_dir
+    // ==========================================
+
+    #[test]
+    fn test_find_ruby_bin_dir_direct() {
+        let dir = TempDir::new().unwrap();
+        let bin_dir = dir.path().join("bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        fs::write(bin_dir.join("ruby"), "fake").unwrap();
+
+        let result = find_ruby_bin_dir(dir.path());
+        assert!(result.is_some());
+        assert!(result.unwrap().ends_with("bin"));
+    }
+
+    #[test]
+    fn test_find_ruby_bin_dir_nested() {
+        let dir = TempDir::new().unwrap();
+        let nested = dir.path().join("arm64").join("bin");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("ruby"), "fake").unwrap();
+
+        let result = find_ruby_bin_dir(dir.path());
+        assert!(result.is_some());
+        assert!(result.unwrap().to_string_lossy().contains("arm64"));
+    }
+
+    #[test]
+    fn test_find_ruby_bin_dir_not_found() {
+        let dir = TempDir::new().unwrap();
+        let result = find_ruby_bin_dir(dir.path());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_ruby_bin_dir_empty() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join("bin")).unwrap();
+        // bin/ exists but no ruby binary inside
+        let result = find_ruby_bin_dir(dir.path());
+        assert!(result.is_none());
+    }
+
+    // ==========================================
+    // copy_dir_recursive
+    // ==========================================
+
+    #[test]
+    fn test_copy_dir_recursive_basic() {
+        let src = TempDir::new().unwrap();
+        let dst = TempDir::new().unwrap();
+        let dst_path = dst.path().join("copy");
+
+        fs::write(src.path().join("file.txt"), "hello").unwrap();
+        fs::create_dir_all(src.path().join("sub")).unwrap();
+        fs::write(src.path().join("sub").join("nested.txt"), "world").unwrap();
+
+        copy_dir_recursive(src.path(), &dst_path).unwrap();
+
+        assert_eq!(fs::read_to_string(dst_path.join("file.txt")).unwrap(), "hello");
+        assert_eq!(fs::read_to_string(dst_path.join("sub").join("nested.txt")).unwrap(), "world");
+    }
+
+    #[test]
+    fn test_copy_dir_recursive_empty() {
+        let src = TempDir::new().unwrap();
+        let dst = TempDir::new().unwrap();
+        let dst_path = dst.path().join("copy");
+
+        copy_dir_recursive(src.path(), &dst_path).unwrap();
+        assert!(dst_path.exists());
+    }
+
+    #[test]
+    fn test_copy_dir_recursive_preserves_content() {
+        let src = TempDir::new().unwrap();
+        let dst = TempDir::new().unwrap();
+        let dst_path = dst.path().join("copy");
+
+        let content = "line1\nline2\nline3\n";
+        fs::write(src.path().join("data.txt"), content).unwrap();
+
+        copy_dir_recursive(src.path(), &dst_path).unwrap();
+        assert_eq!(fs::read_to_string(dst_path.join("data.txt")).unwrap(), content);
+    }
+
+    // ==========================================
+    // read_gemspecs
+    // ==========================================
+
+    #[test]
+    fn test_read_gemspecs_basic() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("rake-13.1.0.gemspec"), "spec").unwrap();
+        fs::write(dir.path().join("bundler-2.5.0.gemspec"), "spec").unwrap();
+
+        let gems = read_gemspecs(dir.path(), true);
+        assert_eq!(gems.len(), 2);
+
+        let names: Vec<&str> = gems.iter().map(|g| g.name.as_str()).collect();
+        assert!(names.contains(&"rake"));
+        assert!(names.contains(&"bundler"));
+        assert!(gems.iter().all(|g| g.is_default));
+    }
+
+    #[test]
+    fn test_read_gemspecs_user_gems() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("rails-7.2.0.gemspec"), "spec").unwrap();
+
+        let gems = read_gemspecs(dir.path(), false);
+        assert_eq!(gems.len(), 1);
+        assert_eq!(gems[0].name, "rails");
+        assert_eq!(gems[0].version, "7.2.0");
+        assert!(!gems[0].is_default);
+    }
+
+    #[test]
+    fn test_read_gemspecs_empty_dir() {
+        let dir = TempDir::new().unwrap();
+        let gems = read_gemspecs(dir.path(), true);
+        assert!(gems.is_empty());
+    }
+
+    #[test]
+    fn test_read_gemspecs_ignores_non_gemspec() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("readme.md"), "hello").unwrap();
+        fs::write(dir.path().join("rake-13.1.0.gemspec"), "spec").unwrap();
+
+        let gems = read_gemspecs(dir.path(), true);
+        assert_eq!(gems.len(), 1);
+    }
+
+    #[test]
+    fn test_read_gemspecs_hyphenated_name() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("net-http-0.4.0.gemspec"), "spec").unwrap();
+
+        let gems = read_gemspecs(dir.path(), true);
+        assert_eq!(gems.len(), 1);
+        assert_eq!(gems[0].name, "net-http");
+        assert_eq!(gems[0].version, "0.4.0");
+    }
+
+    #[test]
+    fn test_read_gemspecs_nonexistent_dir() {
+        let gems = read_gemspecs(std::path::Path::new("/nonexistent/12345"), true);
+        assert!(gems.is_empty());
+    }
+
+    // ==========================================
+    // fix_shebangs
+    // ==========================================
+
+    #[test]
+    fn test_fix_shebangs_rewrites_runner_path() {
+        let dir = TempDir::new().unwrap();
+        let bin_dir = dir.path().join("bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        fs::write(bin_dir.join("ruby"), "binary").unwrap();
+
+        let old_shebang = "#!/Users/runner/hostedtoolcache/Ruby/4.0.2/x64/bin/ruby";
+        fs::write(bin_dir.join("gem"), format!("{old_shebang}\nputs 'hello'\n")).unwrap();
+        fs::write(bin_dir.join("bundle"), format!("{old_shebang}\nputs 'bundle'\n")).unwrap();
+
+        fix_shebangs(dir.path()).unwrap();
+
+        let gem_content = fs::read_to_string(bin_dir.join("gem")).unwrap();
+        let expected_shebang = format!("#!{}", bin_dir.join("ruby").display());
+        assert!(gem_content.starts_with(&expected_shebang));
+        assert!(gem_content.contains("puts 'hello'"));
+
+        let bundle_content = fs::read_to_string(bin_dir.join("bundle")).unwrap();
+        assert!(bundle_content.starts_with(&expected_shebang));
+    }
+
+    #[test]
+    fn test_fix_shebangs_skips_ruby_binary() {
+        let dir = TempDir::new().unwrap();
+        let bin_dir = dir.path().join("bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        fs::write(bin_dir.join("ruby"), "original binary content").unwrap();
+
+        fix_shebangs(dir.path()).unwrap();
+
+        assert_eq!(fs::read_to_string(bin_dir.join("ruby")).unwrap(), "original binary content");
+    }
+
+    #[test]
+    fn test_fix_shebangs_leaves_good_shebangs_alone() {
+        let dir = TempDir::new().unwrap();
+        let bin_dir = dir.path().join("bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        fs::write(bin_dir.join("ruby"), "binary").unwrap();
+
+        let good_script = "#!/usr/bin/env ruby\nputs 'hello'\n";
+        fs::write(bin_dir.join("myscript"), good_script).unwrap();
+
+        fix_shebangs(dir.path()).unwrap();
+
+        assert_eq!(fs::read_to_string(bin_dir.join("myscript")).unwrap(), good_script);
+    }
+
+    #[test]
+    fn test_fix_shebangs_no_bin_dir() {
+        let dir = TempDir::new().unwrap();
+        // No bin/ directory — should not error
+        let result = fix_shebangs(dir.path());
+        assert!(result.is_ok());
+    }
+
+    // ==========================================
+    // collect_files_recursive
+    // ==========================================
+
+    #[test]
+    fn test_collect_files_recursive_finds_extensions() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("lib.dylib"), "").unwrap();
+        fs::create_dir_all(dir.path().join("ext")).unwrap();
+        fs::write(dir.path().join("ext").join("native.bundle"), "").unwrap();
+        fs::write(dir.path().join("ext").join("readme.txt"), "").unwrap();
+
+        let mut files = Vec::new();
+        collect_files_recursive(dir.path(), &["dylib", "bundle"], &mut files);
+
+        assert_eq!(files.len(), 2);
+        let names: Vec<String> = files.iter().map(|f| f.file_name().unwrap().to_string_lossy().to_string()).collect();
+        assert!(names.contains(&"lib.dylib".to_string()));
+        assert!(names.contains(&"native.bundle".to_string()));
+    }
+
+    #[test]
+    fn test_collect_files_recursive_empty() {
+        let dir = TempDir::new().unwrap();
+        let mut files = Vec::new();
+        collect_files_recursive(dir.path(), &["dylib"], &mut files);
+        assert!(files.is_empty());
+    }
+
+    // ==========================================
+    // scan_project edge cases
+    // ==========================================
+
+    #[test]
+    fn test_scan_project_gemfile_single_quotes() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("Gemfile"), "ruby '3.2.0'\n").unwrap();
+
+        let result = scan_project(dir.path().to_string_lossy().to_string()).unwrap();
+        assert_eq!(result.detected_version, Some("3.2.0".to_string()));
+    }
+
+    #[test]
+    fn test_scan_project_gemfile_gte_constraint() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("Gemfile"), "ruby \">= 3.1.0\"\n").unwrap();
+
+        let result = scan_project(dir.path().to_string_lossy().to_string()).unwrap();
+        assert_eq!(result.detected_version, Some("3.1.0".to_string()));
+    }
+
+    #[test]
+    fn test_scan_project_tool_versions_ignores_other_tools() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(".tool-versions"), "nodejs 20.0.0\npython 3.12.0\n").unwrap();
+
+        let result = scan_project(dir.path().to_string_lossy().to_string()).unwrap();
+        assert!(result.detected_version.is_none());
+    }
+
+    #[test]
+    fn test_scan_project_empty_ruby_version_file() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(".ruby-version"), "  \n").unwrap();
+
+        let result = scan_project(dir.path().to_string_lossy().to_string()).unwrap();
+        assert!(result.detected_version.is_none());
+    }
+
+    #[test]
+    fn test_scan_project_name_from_directory() {
+        let dir = TempDir::new().unwrap();
+        let result = scan_project(dir.path().to_string_lossy().to_string()).unwrap();
+        // project_name should be the last dir component
+        assert!(!result.project_name.is_empty());
+    }
+
+    // ==========================================
+    // version_cmp edge cases
+    // ==========================================
+
+    #[test]
+    fn test_version_cmp_identical() {
+        assert_eq!(version_cmp("1.0.0", "1.0.0"), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn test_version_cmp_single_component() {
+        assert_eq!(version_cmp("4", "3"), std::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn test_version_cmp_empty_string() {
+        assert_eq!(version_cmp("", ""), std::cmp::Ordering::Equal);
+    }
+
+    // ==========================================
+    // config write/read roundtrip via temp dir
+    // ==========================================
+
+    #[test]
+    fn test_config_serialization_roundtrip_with_empty_projects() {
+        let config = RubynautConfig {
+            global_version: Some("4.0.2".to_string()),
+            projects: vec![],
+        };
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let parsed: RubynautConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.global_version, Some("4.0.2".to_string()));
+        assert!(parsed.projects.is_empty());
+    }
+
+    #[test]
+    fn test_config_serialization_with_null_global() {
+        let config = RubynautConfig {
+            global_version: None,
+            projects: vec![TrackedProject {
+                path: "/home/user/app".to_string(),
+                name: "app".to_string(),
+            }],
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: RubynautConfig = serde_json::from_str(&json).unwrap();
+        assert!(parsed.global_version.is_none());
+        assert_eq!(parsed.projects.len(), 1);
+    }
+
+    // ==========================================
+    // Gemfile.lock parsing edge cases
+    // ==========================================
+
+    #[test]
+    fn test_parse_gemfile_lock_multiple_specs_sections() {
+        let dir = TempDir::new().unwrap();
+        let lockfile = dir.path().join("Gemfile.lock");
+        fs::write(&lockfile, r#"GEM
+  remote: https://rubygems.org/
+  specs:
+    rails (7.1.0)
+
+PATH
+  remote: .
+  specs:
+    mygem (0.1.0)
+
+PLATFORMS
+  ruby
+"#).unwrap();
+
+        let gems = get_project_gems(dir.path().to_string_lossy().to_string()).unwrap();
+        // Should capture gems from both specs sections
+        assert_eq!(gems.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_gemfile_lock_gem_with_platform_suffix() {
+        let dir = TempDir::new().unwrap();
+        let lockfile = dir.path().join("Gemfile.lock");
+        fs::write(&lockfile, r#"GEM
+  specs:
+    google-protobuf (4.26.0-arm64-darwin)
+    grpc (1.62.0-arm64-darwin)
+"#).unwrap();
+
+        let gems = get_project_gems(dir.path().to_string_lossy().to_string()).unwrap();
+        assert_eq!(gems.len(), 2);
+        assert_eq!(gems[0].name, "google-protobuf");
+        assert_eq!(gems[0].version, "4.26.0-arm64-darwin");
+    }
+
+    // ==========================================
+    // Shell hook generation edge cases
+    // ==========================================
+
+    #[test]
+    fn test_shell_hook_with_full_path() {
+        let result = get_shell_hook("/bin/bash".to_string());
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("rubynaut_switch"));
+    }
+
+    #[test]
+    fn test_shell_hook_fish_full_path() {
+        let result = get_shell_hook("/usr/bin/fish".to_string());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_shell_hook_pwsh() {
+        let result = get_shell_hook("pwsh".to_string());
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("Invoke-RubynautSwitch"));
+    }
+
+    #[test]
+    fn test_generate_posix_hook_contains_required_parts() {
+        let hook = generate_posix_hook("/home/user/.rubies");
+        assert!(hook.contains("rubynaut_switch"));
+        assert!(hook.contains(".ruby-version"));
+        assert!(hook.contains("GEM_HOME"));
+        assert!(hook.contains("GEM_PATH"));
+        assert!(hook.contains("/home/user/.rubies"));
+    }
+
+    #[test]
+    fn test_generate_fish_hook_contains_required_parts() {
+        let hook = generate_fish_hook("/home/user/.rubies");
+        assert!(hook.contains("rubynaut_switch"));
+        assert!(hook.contains("--on-variable PWD"));
+        assert!(hook.contains("GEM_HOME"));
+        assert!(hook.contains("/home/user/.rubies"));
+    }
+
+    #[test]
+    fn test_generate_powershell_hook_contains_required_parts() {
+        let hook = generate_powershell_hook("/home/user/.rubies");
+        assert!(hook.contains("Invoke-RubynautSwitch"));
+        assert!(hook.contains(".ruby-version"));
+        assert!(hook.contains("/home/user/.rubies"));
+    }
+
+    // ==========================================
+    // find_gem_spec_dir
+    // ==========================================
+
+    #[test]
+    fn test_find_gem_spec_dir_default() {
+        let dir = TempDir::new().unwrap();
+        let spec_dir = dir.path().join("lib/ruby/gems/3.3.0/specifications/default");
+        fs::create_dir_all(&spec_dir).unwrap();
+
+        let result = find_gem_spec_dir(dir.path(), true);
+        assert!(result.is_some());
+        assert!(result.unwrap().to_string_lossy().contains("default"));
+    }
+
+    #[test]
+    fn test_find_gem_spec_dir_user() {
+        let dir = TempDir::new().unwrap();
+        let spec_dir = dir.path().join("lib/ruby/gems/3.3.0/specifications");
+        fs::create_dir_all(&spec_dir).unwrap();
+
+        let result = find_gem_spec_dir(dir.path(), false);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_find_gem_spec_dir_no_gems() {
+        let dir = TempDir::new().unwrap();
+        let result = find_gem_spec_dir(dir.path(), true);
+        assert!(result.is_none());
+    }
+
+    // ==========================================
+    // gem_env edge cases
+    // ==========================================
+
+    #[test]
+    fn test_gem_env_path_includes_bin_dir() {
+        let dir = TempDir::new().unwrap();
+        let env = gem_env(dir.path(), "4.0.2");
+
+        let path_val = env.iter().find(|(k, _)| k == "PATH").unwrap();
+        assert!(path_val.1.contains("bin"));
+    }
+
+    #[test]
+    fn test_gem_env_gem_path_includes_gems_dir() {
+        let dir = TempDir::new().unwrap();
+        let env = gem_env(dir.path(), "3.3.6");
+
+        let gem_path = env.iter().find(|(k, _)| k == "GEM_PATH").unwrap();
+        assert!(gem_path.1.contains("3.3.6"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_gem_env_macos_dyld_path() {
+        let dir = TempDir::new().unwrap();
+        let env = gem_env(dir.path(), "4.0.2");
+
+        let dyld = env.iter().find(|(k, _)| k == "DYLD_FALLBACK_LIBRARY_PATH");
+        assert!(dyld.is_some());
+    }
+
+    // ==========================================
+    // build_rubylib with multiple dirs
+    // ==========================================
+
+    #[test]
+    fn test_build_rubylib_with_vendor_ruby() {
+        let dir = TempDir::new().unwrap();
+        let vendor = dir.path().join("lib/ruby/vendor_ruby");
+        fs::create_dir_all(&vendor).unwrap();
+
+        let result = build_rubylib(dir.path());
+        assert!(result.contains("vendor_ruby"));
+    }
+
+    #[test]
+    fn test_build_rubylib_with_multiple_version_dirs() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join("lib/ruby/4.0.0")).unwrap();
+        fs::create_dir_all(dir.path().join("lib/ruby/site_ruby")).unwrap();
+
+        let result = build_rubylib(dir.path());
+        assert!(result.contains("4.0.0"));
+        assert!(result.contains("site_ruby"));
+    }
+
+    // ==========================================
+    // version_cache serialization
+    // ==========================================
+
+    #[test]
+    fn test_version_cache_empty_versions() {
+        let cache = VersionCache {
+            versions: vec![],
+            fetched_at: 0,
+        };
+        let json = serde_json::to_string(&cache).unwrap();
+        let parsed: VersionCache = serde_json::from_str(&json).unwrap();
+        assert!(parsed.versions.is_empty());
+    }
+
+    // ==========================================
+    // Version string validation
+    // ==========================================
+
+    #[test]
+    fn test_is_valid_version_standard() {
+        assert!(is_valid_version("4.0.2"));
+        assert!(is_valid_version("3.3.6"));
+        assert!(is_valid_version("3.3.11"));
+        assert!(is_valid_version("2.7.0"));
+        assert!(is_valid_version("1.9.3-p551"));
+        assert!(is_valid_version("2.0.0-p648"));
+    }
+
+    #[test]
+    fn test_is_valid_version_rejects_empty() {
+        assert!(!is_valid_version(""));
+    }
+
+    #[test]
+    fn test_is_valid_version_rejects_path_traversal() {
+        assert!(!is_valid_version("../../../etc/passwd"));
+        assert!(!is_valid_version("4.0.2/../../etc"));
+    }
+
+    #[test]
+    fn test_is_valid_version_rejects_special_chars() {
+        assert!(!is_valid_version("4.0.2; rm -rf /"));
+        assert!(!is_valid_version("4.0.2 && echo pwned"));
+        assert!(!is_valid_version("$(whoami)"));
+        assert!(!is_valid_version("4.0.2`id`"));
+        assert!(!is_valid_version("<script>"));
+    }
+
+    #[test]
+    fn test_is_valid_version_rejects_too_long() {
+        assert!(!is_valid_version("1.2.3.4.5.6.7.8.9.10.11"));
+    }
+
+    #[test]
+    fn test_is_valid_version_rejects_non_digit_start() {
+        assert!(!is_valid_version("ruby-4.0.2"));
+        assert!(!is_valid_version("v4.0.2"));
+    }
+
+    #[test]
+    fn test_is_valid_version_rejects_double_dots() {
+        assert!(!is_valid_version("4..0.2"));
     }
 }

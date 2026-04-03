@@ -10,6 +10,17 @@ function listen(...args) {
   return window.__TAURI__.event.listen(...args);
 }
 
+// HTML escaping to prevent XSS via user-controlled data
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 // ============================================
 // Navigation
 // ============================================
@@ -57,8 +68,8 @@ function showConfirm(title, message) {
     overlay.className = 'dialog-overlay';
     overlay.innerHTML = `
       <div class="dialog">
-        <h3>${title}</h3>
-        <p>${message}</p>
+        <h3>${escapeHtml(title)}</h3>
+        <p>${escapeHtml(message)}</p>
         <div class="dialog-actions">
           <button class="btn btn-secondary" id="dialog-cancel">Cancel</button>
           <button class="btn btn-danger" id="dialog-confirm">Confirm</button>
@@ -124,55 +135,58 @@ async function refreshDashboard() {
         <div class="empty-state">
           <div class="empty-gem"><img src="icons/rubynaut-logo.svg" alt=""></div>
           <p>No Ruby versions installed yet</p>
-          <button class="btn btn-primary" onclick="switchTab('install')">Install Ruby</button>
+          <button class="btn btn-primary" data-action="switch-tab" data-tab="install">Install Ruby</button>
         </div>
       `;
       return;
     }
 
-    list.innerHTML = installed.map(ruby => `
-      <div class="version-block" id="version-block-${ruby.version}">
+    list.innerHTML = installed.map(ruby => {
+      const v = escapeHtml(ruby.version);
+      return `
+      <div class="version-block" id="version-block-${v}">
         <div class="version-item ${ruby.active ? 'active-version' : ''}">
           <div class="version-info">
-            <span class="version-number">${ruby.version}</span>
+            <span class="version-number">${v}</span>
             <div class="version-badges">
               ${ruby.active ? '<span class="version-badge badge-active">Active</span>' : ''}
               ${ruby.version === active ? '<span class="version-badge badge-global">Global</span>' : ''}
             </div>
           </div>
           <div class="version-actions">
-            <button class="btn btn-small btn-ghost ${openPanels[ruby.version] === 'gems' ? 'btn-ghost-active' : ''}" onclick="togglePanel('${ruby.version}', 'gems')">
+            <button class="btn btn-small btn-ghost ${openPanels[ruby.version] === 'gems' ? 'btn-ghost-active' : ''}" data-action="toggle-panel" data-version="${v}" data-panel="gems">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5"/></svg>
               Gems
             </button>
-            <button class="btn btn-small btn-ghost ${openPanels[ruby.version] === 'projects' ? 'btn-ghost-active' : ''}" onclick="togglePanel('${ruby.version}', 'projects')">
+            <button class="btn btn-small btn-ghost ${openPanels[ruby.version] === 'projects' ? 'btn-ghost-active' : ''}" data-action="toggle-panel" data-version="${v}" data-panel="projects">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
               Projects
             </button>
             <div class="version-dropdown">
-              <button class="btn btn-small btn-secondary version-switch-btn" onclick="toggleVersionMenu('${ruby.version}')">
+              <button class="btn btn-small btn-secondary version-switch-btn" data-action="toggle-version-menu" data-version="${v}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
                 Use
               </button>
-              <div class="dropdown-menu hidden" id="menu-${ruby.version}">
-                <button class="dropdown-item" onclick="setGlobal('${ruby.version}')">
+              <div class="dropdown-menu hidden" id="menu-${v}">
+                <button class="dropdown-item" data-action="set-global" data-version="${v}">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
                   Set as Global Default
                   <span class="dropdown-hint">Used in all terminals</span>
                 </button>
-                <button class="dropdown-item" onclick="promptSetLocal('${ruby.version}')">
+                <button class="dropdown-item" data-action="set-local" data-version="${v}">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                   Set as Local (Project)
                   <span class="dropdown-hint">Writes .ruby-version file</span>
                 </button>
               </div>
             </div>
-            <button class="btn btn-small btn-danger" onclick="uninstallRuby('${ruby.version}')">Remove</button>
+            <button class="btn btn-small btn-danger" data-action="uninstall-ruby" data-version="${v}">Remove</button>
           </div>
         </div>
-        <div class="inline-panel" id="panel-${ruby.version}"></div>
+        <div class="inline-panel" id="panel-${v}"></div>
       </div>
-    `).join('');
+    `;
+    }).join('');
 
     // Re-open any panels that were open before refresh
     for (const [version, panelType] of Object.entries(openPanels)) {
@@ -230,7 +244,7 @@ async function loadPanel(version, panelType) {
       currentGemsData = await invoke('get_gems_for_version', { version });
       renderInlineGems(panel, version, currentGemsData);
     } catch (e) {
-      panel.innerHTML = `<div class="inline-panel-content"><p style="color:var(--slate-500)">Failed to load gems: ${e}</p></div>`;
+      panel.innerHTML = `<div class="inline-panel-content"><p style="color:var(--slate-500)">Failed to load gems: ${escapeHtml(e)}</p></div>`;
     }
   } else if (panelType === 'projects') {
     panel.innerHTML = '<div class="inline-panel-content"><div class="loading-state"><div class="spinner"></div><p>Loading projects...</p></div></div>';
@@ -239,7 +253,7 @@ async function loadPanel(version, panelType) {
       const versionProjects = allProjects.filter(p => p.detected_version === version);
       renderInlineProjects(panel, version, versionProjects);
     } catch (e) {
-      panel.innerHTML = `<div class="inline-panel-content"><p style="color:var(--slate-500)">Failed to load projects: ${e}</p></div>`;
+      panel.innerHTML = `<div class="inline-panel-content"><p style="color:var(--slate-500)">Failed to load projects: ${escapeHtml(e)}</p></div>`;
     }
   }
 }
@@ -251,17 +265,17 @@ function renderInlineGems(panel, version, gems) {
   panel.innerHTML = `
     <div class="inline-panel-content">
       <div class="gems-install-row">
-        <input type="text" id="gem-install-input" class="text-input" placeholder="Gem name..." onkeydown="if(event.key==='Enter')installGemFromInput()">
-        <input type="text" id="gem-version-input" class="text-input gem-version-field" placeholder="Version (optional)" onkeydown="if(event.key==='Enter')installGemFromInput()">
-        <button class="btn btn-primary btn-small" id="gem-install-btn" onclick="installGemFromInput()">Install</button>
+        <input type="text" id="gem-install-input" class="text-input" placeholder="Gem name...">
+        <input type="text" id="gem-version-input" class="text-input gem-version-field" placeholder="Version (optional)">
+        <button class="btn btn-primary btn-small" id="gem-install-btn" data-action="install-gem">Install</button>
       </div>
       <div class="gems-filters">
-        <input type="text" id="gems-search" class="text-input" placeholder="Filter gems..." oninput="filterGems()">
+        <input type="text" id="gems-search" class="text-input" placeholder="Filter gems...">
         <label class="filter-label">
-          <input type="checkbox" id="gems-show-default" checked onchange="filterGems()"> Default (${defaultCount})
+          <input type="checkbox" id="gems-show-default" checked> Default (${defaultCount})
         </label>
         <label class="filter-label">
-          <input type="checkbox" id="gems-show-user" checked onchange="filterGems()"> User (${userCount})
+          <input type="checkbox" id="gems-show-user" checked> User (${userCount})
         </label>
       </div>
       <div id="gems-list" class="gems-list">
@@ -270,12 +284,12 @@ function renderInlineGems(panel, version, gems) {
           : gems.map(gem => `
             <div class="gem-item">
               <div>
-                <span class="gem-name">${gem.name}</span>
+                <span class="gem-name">${escapeHtml(gem.name)}</span>
                 <span class="${gem.is_default ? 'gem-badge-default' : 'gem-badge-user'}">${gem.is_default ? 'default' : 'user'}</span>
               </div>
               <div class="gem-right">
-                <span class="gem-version">${gem.version}</span>
-                ${!gem.is_default ? `<button class="gem-remove-btn" onclick="removeGem('${gem.name}')" title="Uninstall">&#10005;</button>` : ''}
+                <span class="gem-version">${escapeHtml(gem.version)}</span>
+                ${!gem.is_default ? `<button class="gem-remove-btn" data-action="remove-gem" data-gem="${escapeHtml(gem.name)}" title="Uninstall">&#10005;</button>` : ''}
               </div>
             </div>
           `).join('')
@@ -309,13 +323,13 @@ function renderInlineProjects(panel, version, projects) {
             <div class="tracked-project-info">
               <div class="tracked-project-icon">${folderSvg}</div>
               <div class="tracked-project-details">
-                <div class="tracked-project-name">${p.project_name}</div>
-                <div class="tracked-project-path">${shortPath}</div>
+                <div class="tracked-project-name">${escapeHtml(p.project_name)}</div>
+                <div class="tracked-project-path">${escapeHtml(shortPath)}</div>
               </div>
             </div>
             <div class="tracked-project-actions">
-              ${!p.folder_exists ? '<span class="version-badge badge-folder-gone">Missing</span>' : `<span class="version-badge badge-ready">via ${p.source || '?'}</span>`}
-              <button class="btn btn-small btn-ghost" onclick="removeTrackedProject('${p.path.replace(/'/g, "\\'")}')">Remove</button>
+              ${!p.folder_exists ? '<span class="version-badge badge-folder-gone">Missing</span>' : `<span class="version-badge badge-ready">via ${escapeHtml(p.source || '?')}</span>`}
+              <button class="btn btn-small btn-ghost" data-action="remove-tracked-project" data-path="${escapeHtml(p.path.replace(/'/g, "\\'"))}">Remove</button>
             </div>
           </div>
         `;
@@ -402,21 +416,24 @@ async function refreshAvailable() {
 
   try {
     const versions = await invoke('get_available_rubies');
-    grid.innerHTML = versions.map(ruby => `
+    grid.innerHTML = versions.map(ruby => {
+      const v = escapeHtml(ruby.version);
+      return `
       <div class="version-card ${ruby.installed ? 'installed' : ''}">
-        <span class="version-number">${ruby.version}</span>
+        <span class="version-number">${v}</span>
         ${ruby.installed
           ? '<span class="version-badge badge-installed">Installed</span>'
           : '<span class="version-badge badge-prebuilt">Pre-built</span>'
         }
         ${!ruby.installed
-          ? `<button class="btn btn-primary btn-small" onclick="installRuby('${ruby.version}')" ${installing ? 'disabled' : ''}>Install</button>`
+          ? `<button class="btn btn-primary btn-small" data-action="install-ruby" data-version="${v}" ${installing ? 'disabled' : ''}>Install</button>`
           : '<button class="btn btn-ghost btn-small" disabled>Installed</button>'
         }
       </div>
-    `).join('');
+    `;
+    }).join('');
   } catch (e) {
-    grid.innerHTML = `<div class="empty-state"><p>Failed to load versions: ${e}</p></div>`;
+    grid.innerHTML = `<div class="empty-state"><p>Failed to load versions: ${escapeHtml(e)}</p></div>`;
   }
 }
 
@@ -470,8 +487,12 @@ function renderProjectResult(scan) {
   const container = document.getElementById('project-result');
   container.classList.remove('hidden');
 
-  const shortPath = scan.path.replace(/^\/Users\/[^/]+/, '~');
+  const shortPath = escapeHtml(scan.path.replace(/^\/Users\/[^/]+/, '~'));
   const version = scan.detected_version;
+  const escapedVersion = escapeHtml(version);
+  const escapedSource = escapeHtml(scan.source);
+  const escapedName = escapeHtml(scan.project_name);
+  const escapedPath = escapeHtml(scan.path.replace(/'/g, "\\'"));
 
   let versionRow;
   let actionsHtml;
@@ -482,14 +503,14 @@ function renderProjectResult(scan) {
       <div class="project-detail-row success">
         <span class="project-detail-icon" style="color:var(--success)">&#10003;</span>
         <div class="project-detail-content">
-          <div class="project-detail-label">Ruby ${version}</div>
-          <div class="project-detail-value">Detected from ${scan.source} — already installed</div>
+          <div class="project-detail-label">Ruby ${escapedVersion}</div>
+          <div class="project-detail-value">Detected from ${escapedSource} — already installed</div>
         </div>
         <span class="version-badge badge-installed">Ready</span>
       </div>
     `;
     actionsHtml = `
-      <button class="btn btn-primary" onclick="setGlobalFromProject('${version}')">Set as Global</button>
+      <button class="btn btn-primary" data-action="set-global-from-project" data-version="${escapedVersion}">Set as Global</button>
     `;
   } else if (version && !scan.version_installed) {
     // Version detected but not installed — offer to install
@@ -497,15 +518,15 @@ function renderProjectResult(scan) {
       <div class="project-detail-row missing">
         <span class="project-detail-icon" style="color:var(--error)">&#10007;</span>
         <div class="project-detail-content">
-          <div class="project-detail-label">Ruby ${version}</div>
-          <div class="project-detail-value">Detected from ${scan.source} — not installed</div>
+          <div class="project-detail-label">Ruby ${escapedVersion}</div>
+          <div class="project-detail-value">Detected from ${escapedSource} — not installed</div>
         </div>
         <span class="version-badge" style="background:var(--error-bg);color:var(--error);border:1px solid rgba(239,68,68,0.3)">Missing</span>
       </div>
     `;
     actionsHtml = `
-      <button class="btn btn-primary" onclick="installForProject('${version}', '${scan.path.replace(/'/g, "\\'")}')">
-        Install Ruby ${version} &amp; Set Up
+      <button class="btn btn-primary" data-action="install-for-project" data-version="${escapedVersion}" data-path="${escapedPath}">
+        Install Ruby ${escapedVersion} &amp; Set Up
       </button>
     `;
   } else {
@@ -520,7 +541,7 @@ function renderProjectResult(scan) {
       </div>
     `;
     actionsHtml = `
-      <button class="btn btn-secondary" onclick="switchTab('install')">Browse Ruby Versions</button>
+      <button class="btn btn-secondary" data-action="switch-tab" data-tab="install">Browse Ruby Versions</button>
     `;
   }
 
@@ -543,7 +564,7 @@ function renderProjectResult(scan) {
           </svg>
         </div>
         <div>
-          <div class="project-card-title">${scan.project_name}</div>
+          <div class="project-card-title">${escapedName}</div>
           <div class="project-card-path">${shortPath}</div>
         </div>
       </div>
@@ -555,7 +576,7 @@ function renderProjectResult(scan) {
 
       <div class="project-actions">
         ${actionsHtml}
-        <button class="btn btn-secondary" onclick="openProject()">Scan Another</button>
+        <button class="btn btn-secondary" data-action="open-project">Scan Another</button>
       </div>
     </div>
   `;
@@ -603,7 +624,7 @@ function renderTrackedProjectsList(projects) {
   const folderSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
 
   list.innerHTML = projects.map((p, idx) => {
-    const shortPath = p.path.replace(/^\/Users\/[^/]+/, '~');
+    const shortPath = escapeHtml(p.path.replace(/^\/Users\/[^/]+/, '~'));
     let badge, statusClass;
 
     if (!p.folder_exists) {
@@ -621,19 +642,20 @@ function renderTrackedProjectsList(projects) {
     }
 
     const versionDisplay = p.detected_version
-      ? `<span class="tracked-project-version-number">${p.detected_version}</span>
-         <span class="tracked-project-source">via ${p.source || '?'}</span>`
+      ? `<span class="tracked-project-version-number">${escapeHtml(p.detected_version)}</span>
+         <span class="tracked-project-source">via ${escapeHtml(p.source || '?')}</span>`
       : '<span class="tracked-project-source">—</span>';
 
-    const esc = p.path.replace(/'/g, "\\'");
+    const esc = escapeHtml(p.path.replace(/'/g, "\\'"));
+    const escVersion = escapeHtml(p.detected_version);
     const installBtn = (p.detected_version && !p.version_installed && p.folder_exists)
-      ? `<button class="btn btn-small btn-primary" onclick="installForProject('${p.detected_version}', '${esc}')">Install</button>`
+      ? `<button class="btn btn-small btn-primary" data-action="install-for-project" data-version="${escVersion}" data-path="${esc}">Install</button>`
       : '';
     const bundleBtn = (p.has_gemfile && p.version_installed && p.folder_exists)
-      ? `<button class="btn btn-small btn-secondary" id="bundle-btn-${idx}" onclick="runBundleInstall('${p.detected_version}', '${esc}', ${idx})">Bundle</button>`
+      ? `<button class="btn btn-small btn-secondary" id="bundle-btn-${idx}" data-action="run-bundle" data-version="${escVersion}" data-path="${esc}" data-idx="${idx}">Bundle</button>`
       : '';
     const gemsBtn = (p.has_gemfile_lock && p.folder_exists)
-      ? `<button class="btn btn-small btn-ghost" onclick="toggleProjectGems('${esc}', ${idx})">Gems</button>`
+      ? `<button class="btn btn-small btn-ghost" data-action="toggle-project-gems" data-path="${esc}" data-idx="${idx}">Gems</button>`
       : '';
 
     return `
@@ -642,7 +664,7 @@ function renderTrackedProjectsList(projects) {
           <div class="tracked-project-info">
             <div class="tracked-project-icon">${folderSvg}</div>
             <div class="tracked-project-details">
-              <div class="tracked-project-name">${p.project_name}</div>
+              <div class="tracked-project-name">${escapeHtml(p.project_name)}</div>
               <div class="tracked-project-path">${shortPath}</div>
             </div>
           </div>
@@ -654,7 +676,7 @@ function renderTrackedProjectsList(projects) {
             ${gemsBtn}
             ${bundleBtn}
             ${installBtn}
-            <button class="btn btn-small btn-ghost" onclick="removeTrackedProject('${esc}')">Remove</button>
+            <button class="btn btn-small btn-ghost" data-action="remove-tracked-project" data-path="${esc}">Remove</button>
           </div>
         </div>
         <div class="project-inline-panel" id="project-panel-${idx}"></div>
@@ -722,15 +744,15 @@ async function toggleProjectGems(projectPath, idx) {
         <div class="gems-list">
           ${gems.map(g => `
             <div class="gem-item">
-              <span class="gem-name">${g.name}</span>
-              <span class="gem-version">${g.version}</span>
+              <span class="gem-name">${escapeHtml(g.name)}</span>
+              <span class="gem-version">${escapeHtml(g.version)}</span>
             </div>
           `).join('')}
         </div>
       </div>
     `;
   } catch (e) {
-    panel.innerHTML = `<div class="inline-panel-content"><p style="color:var(--slate-500)">${e}</p></div>`;
+    panel.innerHTML = `<div class="inline-panel-content"><p style="color:var(--slate-500)">${escapeHtml(e)}</p></div>`;
     openProjectGems[idx] = false;
   }
 }
@@ -773,22 +795,22 @@ async function runDoctor() {
     results.innerHTML = diagnostics.map((d, i) => {
       const icon = { ok: '&#10003;', warning: '&#9888;', error: '&#10007;' }[d.status];
       const fixBtn = d.fix_command
-        ? `<button class="btn btn-small btn-primary" id="fix-btn-${i}" onclick="runDoctorFix('${d.fix_command.replace(/'/g, "\\'")}', ${i})">Fix</button>`
+        ? `<button class="btn btn-small btn-primary" id="fix-btn-${i}" data-action="run-doctor-fix" data-command="${escapeHtml(d.fix_command)}" data-idx="${i}">Fix</button>`
         : '';
       return `
         <div class="doctor-item">
-          <div class="doctor-icon ${d.status}">${icon}</div>
+          <div class="doctor-icon ${escapeHtml(d.status)}">${icon}</div>
           <div class="doctor-body">
-            <div class="doctor-name">${d.name}</div>
-            <div class="doctor-message">${d.message}</div>
-            ${d.fix_hint ? `<div class="doctor-hint">${d.fix_hint}</div>` : ''}
+            <div class="doctor-name">${escapeHtml(d.name)}</div>
+            <div class="doctor-message">${escapeHtml(d.message)}</div>
+            ${d.fix_hint ? `<div class="doctor-hint">${escapeHtml(d.fix_hint)}</div>` : ''}
           </div>
           ${fixBtn}
         </div>
       `;
     }).join('');
   } catch (e) {
-    results.innerHTML = `<div class="empty-state"><p>Diagnostics failed: ${e}</p></div>`;
+    results.innerHTML = `<div class="empty-state"><p>Diagnostics failed: ${escapeHtml(e)}</p></div>`;
   } finally {
     btn.disabled = false;
     btn.textContent = 'Run Diagnostics';
@@ -819,25 +841,25 @@ async function refreshShellHookStatus() {
   try {
     const statuses = await invoke('check_shell_hook');
     container.innerHTML = statuses.map(s => {
-      const shortFile = s.rc_file.replace(/^\/Users\/[^/]+/, '~');
+      const shortFile = escapeHtml(s.rc_file.replace(/^\/Users\/[^/]+/, '~'));
       return `
         <div class="shell-hook-item ${s.installed ? 'installed' : ''}">
           <div class="shell-hook-info">
             <span class="shell-hook-icon ${s.installed ? 'ok' : 'missing'}">${s.installed ? '&#10003;' : '&#9675;'}</span>
             <div>
-              <div class="shell-hook-name">${s.shell}</div>
+              <div class="shell-hook-name">${escapeHtml(s.shell)}</div>
               <div class="shell-hook-file">${shortFile}</div>
             </div>
           </div>
           ${s.installed
             ? '<span class="version-badge badge-installed">Installed</span>'
-            : `<button class="btn btn-small btn-primary" onclick="doInstallHook('${s.shell}')">Install Hook</button>`
+            : `<button class="btn btn-small btn-primary" data-action="install-hook" data-shell="${escapeHtml(s.shell)}">Install Hook</button>`
           }
         </div>
       `;
     }).join('');
   } catch (e) {
-    container.innerHTML = `<p style="color:var(--slate-500)">Could not detect shells: ${e}</p>`;
+    container.innerHTML = `<p style="color:var(--slate-500)">Could not detect shells: ${escapeHtml(e)}</p>`;
   }
 }
 
@@ -952,6 +974,94 @@ async function init() {
     document.getElementById('install-progress-percent').textContent = `${percent}%`;
     document.getElementById('install-progress-fill').style.width = `${percent}%`;
     document.getElementById('install-progress-message').textContent = message;
+  });
+
+  // Global event delegation — handles all data-action clicks
+  document.addEventListener('click', (e) => {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+
+    const action = target.dataset.action;
+    switch (action) {
+      case 'switch-tab':
+        switchTab(target.dataset.tab);
+        break;
+      case 'open-project':
+        openProject();
+        break;
+      case 'run-doctor':
+        runDoctor();
+        break;
+      case 'show-shell-hook':
+        showShellHook();
+        break;
+      case 'open-external':
+        e.preventDefault();
+        openExternal(target.dataset.url);
+        break;
+      case 'toggle-panel':
+        togglePanel(target.dataset.version, target.dataset.panel);
+        break;
+      case 'toggle-version-menu':
+        toggleVersionMenu(target.dataset.version);
+        break;
+      case 'set-global':
+        setGlobal(target.dataset.version);
+        break;
+      case 'set-local':
+        promptSetLocal(target.dataset.version);
+        break;
+      case 'uninstall-ruby':
+        uninstallRuby(target.dataset.version);
+        break;
+      case 'install-gem':
+        installGemFromInput();
+        break;
+      case 'remove-gem':
+        removeGem(target.dataset.gem);
+        break;
+      case 'install-ruby':
+        installRuby(target.dataset.version);
+        break;
+      case 'install-for-project':
+        installForProject(target.dataset.version, target.dataset.path);
+        break;
+      case 'set-global-from-project':
+        setGlobalFromProject(target.dataset.version);
+        break;
+      case 'run-bundle':
+        runBundleInstall(target.dataset.version, target.dataset.path, parseInt(target.dataset.idx));
+        break;
+      case 'toggle-project-gems':
+        toggleProjectGems(target.dataset.path, parseInt(target.dataset.idx));
+        break;
+      case 'remove-tracked-project':
+        removeTrackedProject(target.dataset.path);
+        break;
+      case 'run-doctor-fix':
+        runDoctorFix(target.dataset.command, parseInt(target.dataset.idx));
+        break;
+      case 'install-hook':
+        doInstallHook(target.dataset.shell);
+        break;
+    }
+  });
+
+  // Event delegation for input events (gem filter, Enter key)
+  document.addEventListener('input', (e) => {
+    if (e.target.id === 'gems-search' || e.target.id === 'gems-show-default' || e.target.id === 'gems-show-user') {
+      filterGems();
+    }
+  });
+  document.addEventListener('change', (e) => {
+    if (e.target.id === 'gems-show-default' || e.target.id === 'gems-show-user') {
+      filterGems();
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.target.id === 'gem-install-input' || e.target.id === 'gem-version-input')) {
+      installGemFromInput();
+    }
   });
 
   await detectPlatform();
