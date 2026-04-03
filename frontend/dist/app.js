@@ -1063,7 +1063,15 @@ async function removeGem(gemName) {
       gemName: gemName
     });
     showToast(`Removed ${gemName}`, 'success');
-    loadPanel(currentGemsVersion, 'gems');
+
+    // Immediately remove from local data so UI updates even if re-fetch returns stale data
+    currentGemsData = currentGemsData.filter(g => g.name !== gemName);
+
+    // Re-render the panel with updated data
+    const panel = document.getElementById(`panel-${currentGemsVersion}`);
+    if (panel) {
+      renderInlineGems(panel, currentGemsVersion, currentGemsData);
+    }
   } catch (e) {
     showToast(`Failed to remove ${gemName}: ${e}`, 'error');
   }

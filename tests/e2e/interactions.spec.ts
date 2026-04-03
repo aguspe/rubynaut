@@ -56,11 +56,16 @@ test.describe("Gem Management", () => {
     await expect(page.locator(".dialog h3")).toContainText("Uninstall Gem");
   });
 
-  test("gem uninstall confirm triggers removal", async ({ page }) => {
+  test("gem uninstall confirm triggers removal and updates list", async ({ page }) => {
     await page.locator(".version-actions .btn-ghost >> text=Gems").first().click();
+    const initialCount = await page.locator(".gem-item").count();
+
     await page.locator(".gem-remove-btn").first().click();
     await page.click("#dialog-confirm");
     await expect(page.locator(".toast-success")).toBeVisible({ timeout: 5000 });
+
+    // Gem should be removed from the list immediately
+    await expect(page.locator(".gem-item")).toHaveCount(initialCount - 1);
   });
 
   test("gem uninstall cancel closes dialog", async ({ page }) => {
