@@ -266,6 +266,8 @@ jobs:
 
       - name: Run tests with coverage
         if: runner.os == 'Linux'
+        env:
+          RUST_TEST_THREADS: "1"
         run: cargo tarpaulin -p rubynaut-core --out xml --output-dir coverage
 
       - name: Upload coverage
