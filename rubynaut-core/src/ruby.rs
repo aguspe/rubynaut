@@ -1010,6 +1010,7 @@ pub async fn check_for_update(current_version: &str, repo: &str) -> Result<Optio
 }
 
 /// Download and replace the current binary with a newer version.
+/// Verifies SHA256 checksum if a .sha256 sidecar file is available.
 pub async fn self_update(download_url: &str) -> Result<String, String> {
     if download_url.is_empty() {
         return Err("No download URL available for this platform. Please update manually.".to_string());
@@ -1031,6 +1032,21 @@ pub async fn self_update(download_url: &str) -> Result<String, String> {
         .await
         .map_err(|e| format!("Failed to read download: {e}"))?;
 
+    // Verify SHA256 checksum of the update binary
+    match fetch_checksum(&client, download_url).await {
+        Ok(Some(expected)) => {
+            let actual = sha256_hex(&bytes);
+            if actual != expected {
+                return Err(format!(
+                    "Update checksum mismatch! Expected {expected}, got {actual}. The download may be corrupted or tampered with."
+                ));
+            }
+        }
+        Ok(None) | Err(_) => {
+            // No checksum available — proceed (the download came over HTTPS)
+        }
+    }
+
     // Get the path of the current executable
     let current_exe = std::env::current_exe()
         .map_err(|e| format!("Cannot determine current executable path: {e}"))?;
@@ -1038,7 +1054,10 @@ pub async fn self_update(download_url: &str) -> Result<String, String> {
     // Write to a temp file next to the current binary, then rename
     let tmp_path = current_exe.with_extension("update-tmp");
     fs::write(&tmp_path, &bytes)
-        .map_err(|e| format!("Failed to write update: {e}"))?;
+        .map_err(|e| {
+            let _ = fs::remove_file(&tmp_path);
+            format!("Failed to write update: {e}")
+        })?;
 
     // Make executable on Unix
     #[cfg(unix)]
@@ -1047,15 +1066,19 @@ pub async fn self_update(download_url: &str) -> Result<String, String> {
         let _ = fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o755));
     }
 
-    // Replace old binary
+    // Replace old binary with backup and restore on failure
     let backup_path = current_exe.with_extension("old");
     let _ = fs::remove_file(&backup_path);
     fs::rename(&current_exe, &backup_path)
-        .map_err(|e| format!("Failed to backup current binary: {e}"))?;
+        .map_err(|e| {
+            let _ = fs::remove_file(&tmp_path);
+            format!("Failed to backup current binary: {e}")
+        })?;
     fs::rename(&tmp_path, &current_exe)
         .map_err(|e| {
-            // Try to restore backup
+            // Restore backup on failure
             let _ = fs::rename(&backup_path, &current_exe);
+            let _ = fs::remove_file(&tmp_path);
             format!("Failed to install update: {e}")
         })?;
     let _ = fs::remove_file(&backup_path);
@@ -1115,8 +1138,14 @@ pub async fn install_ruby_from_archive(
     }
 
     let bin_dir = find_ruby_bin_dir(&tmp_dir)
-        .ok_or("Could not find ruby binary in extracted archive")?;
-    let ruby_root = bin_dir.parent().ok_or("Unexpected archive structure")?;
+        .ok_or_else(|| {
+            let _ = fs::remove_dir_all(&tmp_dir);
+            "Could not find ruby binary in extracted archive".to_string()
+        })?;
+    let ruby_root = bin_dir.parent().ok_or_else(|| {
+        let _ = fs::remove_dir_all(&tmp_dir);
+        "Unexpected archive structure".to_string()
+    })?;
 
     if target_dir.exists() {
         fs::remove_dir_all(&target_dir)
@@ -1125,43 +1154,57 @@ pub async fn install_ruby_from_archive(
 
     fs::rename(ruby_root, &target_dir).or_else(|_| {
         copy_dir_recursive(ruby_root, &target_dir)
-    }).map_err(|e| format!("Failed to move Ruby to final location: {e}"))?;
+    }).map_err(|e| {
+        let _ = fs::remove_dir_all(&tmp_dir);
+        format!("Failed to move Ruby to final location: {e}")
+    })?;
 
     let _ = fs::remove_dir_all(&tmp_dir);
     let gems_dir = rubies_dir().join("gems").join(&version);
     let _ = fs::create_dir_all(&gems_dir);
 
-    if cfg!(target_os = "macos") {
-        if let Some(cb) = &on_progress {
-            cb("verify", 70, "Fixing library paths...");
+    // Wrap post-move operations — clean up target_dir on any failure
+    let post_install_result = (|| -> Result<String, String> {
+        if cfg!(target_os = "macos") {
+            if let Some(cb) = &on_progress {
+                cb("verify", 70, "Fixing library paths...");
+            }
+            fix_macos_dylib_paths(&target_dir, &version)?;
         }
-        fix_macos_dylib_paths(&target_dir, &version)?;
-    }
-    if cfg!(target_os = "linux") {
-        if let Some(cb) = &on_progress {
-            cb("verify", 70, "Fixing library paths...");
+        if cfg!(target_os = "linux") {
+            if let Some(cb) = &on_progress {
+                cb("verify", 70, "Fixing library paths...");
+            }
+            fix_linux_rpath(&target_dir)?;
         }
-        fix_linux_rpath(&target_dir)?;
-    }
-    fix_shebangs(&target_dir)?;
+        fix_shebangs(&target_dir)?;
 
-    if let Some(cb) = &on_progress {
-        cb("verify", 85, "Verifying installation...");
-    }
+        if let Some(cb) = &on_progress {
+            cb("verify", 85, "Verifying installation...");
+        }
 
-    let ruby_bin = target_dir.join("bin").join("ruby");
-    let verify = Command::new(&ruby_bin)
-        .arg("--version")
-        .output()
-        .map_err(|e| format!("Verification failed: {e}"))?;
+        let ruby_bin = target_dir.join("bin").join("ruby");
+        let verify = Command::new(&ruby_bin)
+            .arg("--version")
+            .output()
+            .map_err(|e| format!("Verification failed: {e}"))?;
 
-    if !verify.status.success() {
-        let stderr = String::from_utf8_lossy(&verify.stderr);
-        let _ = fs::remove_dir_all(&target_dir);
-        return Err(format!("Ruby binary failed verification: {stderr}"));
-    }
+        if !verify.status.success() {
+            let stderr = String::from_utf8_lossy(&verify.stderr);
+            return Err(format!("Ruby binary failed verification: {stderr}"));
+        }
 
-    let ruby_version_output = String::from_utf8_lossy(&verify.stdout).trim().to_string();
+        Ok(String::from_utf8_lossy(&verify.stdout).trim().to_string())
+    })();
+
+    let ruby_version_output = match post_install_result {
+        Ok(output) => output,
+        Err(e) => {
+            let _ = fs::remove_dir_all(&target_dir);
+            let _ = fs::remove_dir_all(&gems_dir);
+            return Err(e);
+        }
+    };
 
     let default_gems = read_default_gems();
     if !default_gems.is_empty() {
@@ -1378,54 +1421,68 @@ pub async fn install_ruby(version: String, on_progress: Option<ProgressCallback>
     fs::rename(ruby_root, &target_dir).or_else(|_| {
         // Cross-device move fallback: copy then delete
         copy_dir_recursive(ruby_root, &target_dir)
-    }).map_err(|e| format!("Failed to move Ruby to final location: {e}"))?;
+    }).map_err(|e| {
+        let _ = fs::remove_dir_all(&tmp_dir);
+        format!("Failed to move Ruby to final location: {e}")
+    })?;
 
-    // Cleanup
+    // Cleanup tmp dir (always, regardless of what happens next)
     let _ = fs::remove_dir_all(&tmp_dir);
 
     // Create gems directory
     let gems_dir = rubies_dir().join("gems").join(&version);
     let _ = fs::create_dir_all(&gems_dir);
 
-    // Fix hardcoded dylib paths (macOS only)
-    // ruby-builder binaries reference /Users/runner/hostedtoolcache/... which doesn't exist locally
-    if cfg!(target_os = "macos") {
-        if let Some(cb) = &on_progress {
-            cb("verify", 85, "Fixing library paths...");
+    // All post-move operations are wrapped in a closure so that on ANY error,
+    // we clean up the partially-installed target_dir before returning.
+    let post_install_result = (|| -> Result<String, String> {
+        // Fix hardcoded dylib paths (macOS only)
+        if cfg!(target_os = "macos") {
+            if let Some(cb) = &on_progress {
+                cb("verify", 85, "Fixing library paths...");
+            }
+            fix_macos_dylib_paths(&target_dir, &version)?;
         }
-        fix_macos_dylib_paths(&target_dir, &version)?;
-    }
 
-    // Fix hardcoded paths on Linux (rpath / interpreter)
-    if cfg!(target_os = "linux") {
-        if let Some(cb) = &on_progress {
-            cb("verify", 85, "Fixing library paths...");
+        // Fix hardcoded paths on Linux (rpath / interpreter)
+        if cfg!(target_os = "linux") {
+            if let Some(cb) = &on_progress {
+                cb("verify", 85, "Fixing library paths...");
+            }
+            fix_linux_rpath(&target_dir)?;
         }
-        fix_linux_rpath(&target_dir)?;
-    }
 
-    // Fix shebangs in bin/ scripts (gem, bundle, irb, etc.)
-    // They reference /Users/runner/... which doesn't exist locally
-    fix_shebangs(&target_dir)?;
+        // Fix shebangs in bin/ scripts (gem, bundle, irb, etc.)
+        fix_shebangs(&target_dir)?;
 
-    // Stage 3: Verify
-    if let Some(cb) = &on_progress {
-        cb("verify", 90, "Verifying installation...");
-    }
+        // Stage 3: Verify
+        if let Some(cb) = &on_progress {
+            cb("verify", 90, "Verifying installation...");
+        }
 
-    let ruby_bin = target_dir.join("bin").join("ruby");
-    let verify = Command::new(&ruby_bin)
-        .arg("--version")
-        .output()
-        .map_err(|e| format!("Verification failed: {e}"))?;
+        let ruby_bin = target_dir.join("bin").join("ruby");
+        let verify = Command::new(&ruby_bin)
+            .arg("--version")
+            .output()
+            .map_err(|e| format!("Verification failed: {e}"))?;
 
-    if !verify.status.success() {
-        let stderr = String::from_utf8_lossy(&verify.stderr);
-        let _ = fs::remove_dir_all(&target_dir);
-        return Err(format!("Ruby binary failed verification: {stderr}"));
-    }
+        if !verify.status.success() {
+            let stderr = String::from_utf8_lossy(&verify.stderr);
+            return Err(format!("Ruby binary failed verification: {stderr}"));
+        }
 
-    let ruby_version_output = String::from_utf8_lossy(&verify.stdout).trim().to_string();
+        Ok(String::from_utf8_lossy(&verify.stdout).trim().to_string())
+    })();
+
+    // If any post-install step failed, clean up the target directory and gems
+    let ruby_version_output = match post_install_result {
+        Ok(output) => output,
+        Err(e) => {
+            let _ = fs::remove_dir_all(&target_dir);
+            let _ = fs::remove_dir_all(&gems_dir);
+            return Err(e);
+        }
+    };
 
     // Install default gems if ~/.rubies/default-gems exists
     let default_gems = read_default_gems();
@@ -1775,11 +1832,20 @@ rubynaut_switch() {{
   elif [ -n "$target_version" ] && ! [ -d "{rubies_path}/$target_version/bin" ]; then
     # Auto-install: version required but not installed
     if command -v rubynaut >/dev/null 2>&1; then
-      echo "rubynaut: Ruby $target_version is not installed."
-      printf "Install it now? [y/N] "
-      read -r answer
-      if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+      if [ "$RUBYNAUT_AUTO_INSTALL" = "1" ]; then
+        # Silent auto-install (for CI/scripts)
         rubynaut install "$target_version" && rubynaut_switch
+      elif [ -t 0 ]; then
+        # Interactive terminal — prompt the user
+        echo "rubynaut: Ruby $target_version is not installed."
+        printf "Install it now? [y/N] "
+        read -r answer
+        if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+          rubynaut install "$target_version" && rubynaut_switch
+        fi
+      else
+        # Non-interactive (piped, ssh, script) — just warn
+        echo "rubynaut: Ruby $target_version is required but not installed. Run: rubynaut install $target_version" >&2
       fi
     fi
   fi
@@ -1830,10 +1896,19 @@ function rubynaut_switch --on-variable PWD
   else if test -n "$target_version"; and not test -d "{rubies_path}/$target_version/bin"
     # Auto-install: version required but not installed
     if command -v rubynaut >/dev/null 2>&1
-      echo "rubynaut: Ruby $target_version is not installed."
-      read -P "Install it now? [y/N] " answer
-      if test "$answer" = "y" -o "$answer" = "Y"
+      if test "$RUBYNAUT_AUTO_INSTALL" = "1"
+        # Silent auto-install (for CI/scripts)
         rubynaut install "$target_version"; and rubynaut_switch
+      else if isatty stdin
+        # Interactive terminal — prompt the user
+        echo "rubynaut: Ruby $target_version is not installed."
+        read -P "Install it now? [y/N] " answer
+        if test "$answer" = "y" -o "$answer" = "Y"
+          rubynaut install "$target_version"; and rubynaut_switch
+        end
+      else
+        # Non-interactive — just warn
+        echo "rubynaut: Ruby $target_version is required but not installed. Run: rubynaut install $target_version" >&2
       end
     end
   end
@@ -3325,5 +3400,71 @@ PLATFORMS
         assert_eq!(version_cmp("0.1.0", "0.1.0"), std::cmp::Ordering::Equal);
         // Older version
         assert_eq!(version_cmp("0.0.9", "0.1.0"), std::cmp::Ordering::Less);
+    }
+
+    // ==========================================
+    // Shell hooks: TTY detection and RUBYNAUT_AUTO_INSTALL
+    // ==========================================
+
+    #[test]
+    fn test_posix_hook_has_tty_check() {
+        let hook = generate_posix_hook("/home/user/.rubies");
+        // Should check for TTY with -t 0
+        assert!(hook.contains("[ -t 0 ]") || hook.contains("-t 0"));
+        // Should check RUBYNAUT_AUTO_INSTALL env var
+        assert!(hook.contains("RUBYNAUT_AUTO_INSTALL"));
+        // Should have non-interactive warning to stderr
+        assert!(hook.contains(">&2"));
+    }
+
+    #[test]
+    fn test_fish_hook_has_tty_check() {
+        let hook = generate_fish_hook("/home/user/.rubies");
+        // Should check for TTY with isatty
+        assert!(hook.contains("isatty"));
+        // Should check RUBYNAUT_AUTO_INSTALL env var
+        assert!(hook.contains("RUBYNAUT_AUTO_INSTALL"));
+        // Should have non-interactive warning to stderr
+        assert!(hook.contains(">&2"));
+    }
+
+    #[test]
+    fn test_posix_hook_auto_install_before_prompt() {
+        let hook = generate_posix_hook("/home/user/.rubies");
+        // RUBYNAUT_AUTO_INSTALL=1 check should come before the interactive prompt
+        let auto_pos = hook.find("RUBYNAUT_AUTO_INSTALL").unwrap();
+        let prompt_pos = hook.find("Install it now?").unwrap();
+        assert!(auto_pos < prompt_pos, "Auto-install check should precede interactive prompt");
+    }
+
+    #[test]
+    fn test_fish_hook_auto_install_before_prompt() {
+        let hook = generate_fish_hook("/home/user/.rubies");
+        let auto_pos = hook.find("RUBYNAUT_AUTO_INSTALL").unwrap();
+        let prompt_pos = hook.find("Install it now?").unwrap();
+        assert!(auto_pos < prompt_pos, "Auto-install check should precede interactive prompt");
+    }
+
+    // ==========================================
+    // Self-update: checksum verification
+    // ==========================================
+
+    #[tokio::test]
+    async fn test_self_update_rejects_empty_url() {
+        let result = self_update("").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No download URL"));
+    }
+
+    // ==========================================
+    // Install rollback: tmp_dir cleanup
+    // ==========================================
+
+    #[test]
+    fn test_install_tmp_dir_location() {
+        let tmp = rubies_dir().join(".tmp-install");
+        // Verify the tmp dir path is under rubies_dir
+        assert!(tmp.to_string_lossy().contains(".rubies"));
+        assert!(tmp.to_string_lossy().contains(".tmp-install"));
     }
 }
