@@ -39,7 +39,7 @@ test.describe("Install Tab", () => {
   }) => {
     // Cards with clickable install buttons (not the disabled "Installed" ones)
     const installButtons = page.locator(
-      ".version-card >> button.btn-primary:has-text('Install')"
+      ".version-card:not(.installed) button:has-text('Install'):not([disabled])"
     );
     await expect(installButtons).toHaveCount(2); // 3.2.4 and 3.1.6
   });

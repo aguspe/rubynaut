@@ -130,6 +130,17 @@
           <p class="progress-message" id="install-progress-message"></p>
         </div>
 
+        <div class="install-filters">
+          <div class="install-engine-tabs">
+            <button class="engine-tab active" data-action="filter-engine" data-engine="recommended">Recommended</button>
+            <button class="engine-tab" data-action="filter-engine" data-engine="ruby">CRuby</button>
+            <button class="engine-tab" data-action="filter-engine" data-engine="jruby">JRuby</button>
+            <button class="engine-tab" data-action="filter-engine" data-engine="truffleruby">TruffleRuby</button>
+            <button class="engine-tab" data-action="filter-engine" data-engine="all">All</button>
+          </div>
+          <input type="text" id="install-search" class="text-input install-search" placeholder="Search versions...">
+        </div>
+
         <div id="available-list" class="version-grid">
           <div class="loading-state">
             <div class="spinner"></div>
@@ -251,6 +262,7 @@
   <!-- Getting Started Wizard -->
   <div id="wizard-overlay" class="wizard-overlay hidden">
     <div class="wizard-container">
+      <button class="wizard-close" data-action="wizard-dismiss" title="Skip setup">&times;</button>
       <div class="wizard-step-indicator" id="wizard-dots"></div>
 
       <div class="wizard-step" data-step="1">

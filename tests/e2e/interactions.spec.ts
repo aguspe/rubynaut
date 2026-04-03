@@ -159,17 +159,19 @@ test.describe("Install Flow", () => {
     await mockTauriAPI(page);
     await page.goto("/");
     await page.click('[data-tab="install"]');
+    // Switch to "All" filter to see uninstalled versions
+    await page.click('[data-engine="all"]');
   });
 
   test("install button triggers install and shows success", async ({ page }) => {
     // Click install on an uninstalled version
-    const installBtn = page.locator(".version-card:not(.installed) .btn-primary >> text=Install").first();
+    const installBtn = page.locator(".version-card:not(.installed) button >> text=Install").first();
     await installBtn.click();
     await expect(page.locator(".toast-success")).toBeVisible({ timeout: 5000 });
   });
 
   test("progress container becomes visible during install", async ({ page }) => {
-    const installBtn = page.locator(".version-card:not(.installed) .btn-primary >> text=Install").first();
+    const installBtn = page.locator(".version-card:not(.installed) button >> text=Install").first();
     await installBtn.click();
     // Progress container should show briefly
     // (Since mock resolves instantly, it may hide quickly)

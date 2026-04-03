@@ -404,6 +404,95 @@ async function uninstallRuby(version) {
 // ============================================
 
 let installing = false;
+let allAvailableVersions = [];
+let currentEngineFilter = 'recommended';
+
+function getEngine(version) {
+  if (version.startsWith('jruby-')) return 'jruby';
+  if (version.startsWith('truffleruby+graalvm-')) return 'truffleruby';
+  if (version.startsWith('truffleruby-')) return 'truffleruby';
+  return 'ruby';
+}
+
+function isRecommended(version, allVersions) {
+  const engine = getEngine(version);
+  if (engine !== 'ruby') return false;
+  // Recommended: latest patch of each major.minor series (e.g. 4.0.x, 3.3.x, 3.2.x)
+  const parts = version.split('.');
+  if (parts.length < 2) return false;
+  const series = parts[0] + '.' + parts[1];
+  const firstInSeries = allVersions.find(v => getEngine(v.version) === 'ruby' && v.version.startsWith(series + '.'));
+  return firstInSeries && firstInSeries.version === version;
+}
+
+function renderAvailableVersions() {
+  const grid = document.getElementById('available-list');
+  const search = (document.getElementById('install-search')?.value || '').toLowerCase();
+
+  let filtered = allAvailableVersions;
+
+  // Engine filter
+  if (currentEngineFilter === 'recommended') {
+    filtered = filtered.filter(v => isRecommended(v.version, allAvailableVersions));
+  } else if (currentEngineFilter !== 'all') {
+    filtered = filtered.filter(v => getEngine(v.version) === currentEngineFilter);
+  }
+
+  // Search filter
+  if (search) {
+    filtered = filtered.filter(v => v.version.toLowerCase().includes(search));
+  }
+
+  if (filtered.length === 0) {
+    grid.innerHTML = `<div class="empty-state"><p>No versions match your filter</p></div>`;
+    return;
+  }
+
+  // Find the latest CRuby for the "Recommended" badge
+  const latestCRuby = allAvailableVersions.find(v => getEngine(v.version) === 'ruby');
+
+  grid.innerHTML = filtered.map(ruby => {
+    const v = escapeHtml(ruby.version);
+    const engine = getEngine(ruby.version);
+    const isLatest = latestCRuby && ruby.version === latestCRuby.version;
+
+    let engineLabel = '';
+    if (engine === 'jruby') engineLabel = '<span class="version-badge badge-engine">JRuby</span>';
+    else if (engine === 'truffleruby') engineLabel = '<span class="version-badge badge-engine">TruffleRuby</span>';
+
+    let statusBadge;
+    if (ruby.installed) {
+      statusBadge = '<span class="version-badge badge-installed">Installed</span>';
+    } else if (isLatest) {
+      statusBadge = '<span class="version-badge badge-recommended">Recommended</span>';
+    } else {
+      statusBadge = '<span class="version-badge badge-prebuilt">Pre-built</span>';
+    }
+
+    return `
+      <div class="version-card ${ruby.installed ? 'installed' : ''} ${isLatest && !ruby.installed ? 'recommended' : ''}">
+        <span class="version-number">${v}</span>
+        <div class="version-card-badges">
+          ${engineLabel}
+          ${statusBadge}
+        </div>
+        ${!ruby.installed
+          ? `<button class="btn ${isLatest ? 'btn-primary' : 'btn-secondary'} btn-small" data-action="install-ruby" data-version="${v}" ${installing ? 'disabled' : ''}>Install</button>`
+          : '<button class="btn btn-ghost btn-small" disabled>Installed</button>'
+        }
+      </div>
+    `;
+  }).join('');
+}
+
+function filterEngine(engine) {
+  currentEngineFilter = engine;
+  // Update active tab
+  document.querySelectorAll('.engine-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.engine === engine);
+  });
+  renderAvailableVersions();
+}
 
 async function refreshAvailable() {
   const grid = document.getElementById('available-list');
@@ -415,23 +504,8 @@ async function refreshAvailable() {
   `;
 
   try {
-    const versions = await invoke('get_available_rubies');
-    grid.innerHTML = versions.map(ruby => {
-      const v = escapeHtml(ruby.version);
-      return `
-      <div class="version-card ${ruby.installed ? 'installed' : ''}">
-        <span class="version-number">${v}</span>
-        ${ruby.installed
-          ? '<span class="version-badge badge-installed">Installed</span>'
-          : '<span class="version-badge badge-prebuilt">Pre-built</span>'
-        }
-        ${!ruby.installed
-          ? `<button class="btn btn-primary btn-small" data-action="install-ruby" data-version="${v}" ${installing ? 'disabled' : ''}>Install</button>`
-          : '<button class="btn btn-ghost btn-small" disabled>Installed</button>'
-        }
-      </div>
-    `;
-    }).join('');
+    allAvailableVersions = await invoke('get_available_rubies');
+    renderAvailableVersions();
   } catch (e) {
     grid.innerHTML = `<div class="empty-state"><p>Failed to load versions: ${escapeHtml(e)}</p></div>`;
   }
@@ -1094,6 +1168,12 @@ function triggerWizard() {
   showWizard();
 }
 
+function dismissWizard() {
+  invoke('set_wizard_completed').catch(() => {});
+  document.getElementById('wizard-overlay').classList.add('hidden');
+  refreshDashboard();
+}
+
 // ============================================
 // Getting Started Wizard
 // ============================================
@@ -1357,6 +1437,12 @@ async function init() {
       case 'trigger-wizard':
         triggerWizard();
         break;
+      case 'wizard-dismiss':
+        dismissWizard();
+        break;
+      case 'filter-engine':
+        filterEngine(target.dataset.engine);
+        break;
       case 'show-info':
         showInfoPopup(target.dataset.info);
         break;
@@ -1366,10 +1452,13 @@ async function init() {
     }
   });
 
-  // Event delegation for input events (gem filter, Enter key)
+  // Event delegation for input events (gem filter, version search, Enter key)
   document.addEventListener('input', (e) => {
     if (e.target.id === 'gems-search' || e.target.id === 'gems-show-default' || e.target.id === 'gems-show-user') {
       filterGems();
+    }
+    if (e.target.id === 'install-search') {
+      renderAvailableVersions();
     }
   });
   document.addEventListener('change', (e) => {
