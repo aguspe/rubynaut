@@ -77,9 +77,38 @@ test.describe("Gem Management", () => {
 
   test("gem filter by name works", async ({ page }) => {
     await page.locator(".version-actions .btn-ghost >> text=Gems").first().click();
+    await expect(page.locator(".gem-item")).toHaveCount(5); // all 5 gems
     await page.fill("#gems-search", "rails");
-    // The filter function is called on input event
-    // With the mock data, only "rails" should match among the gems
+    await expect(page.locator(".gem-item")).toHaveCount(1); // only rails
+    await expect(page.locator(".gem-name").first()).toContainText("rails");
+  });
+
+  test("gem filter by default checkbox hides default gems", async ({ page }) => {
+    await page.locator(".version-actions .btn-ghost >> text=Gems").first().click();
+    await expect(page.locator(".gem-item")).toHaveCount(5);
+
+    // Uncheck "Default" — should hide 3 default gems, show only 2 user gems
+    await page.uncheck("#gems-show-default");
+    await expect(page.locator(".gem-item")).toHaveCount(2);
+    await expect(page.locator(".gem-badge-user")).toHaveCount(2);
+  });
+
+  test("gem filter by user checkbox hides user gems", async ({ page }) => {
+    await page.locator(".version-actions .btn-ghost >> text=Gems").first().click();
+    await expect(page.locator(".gem-item")).toHaveCount(5);
+
+    // Uncheck "User" — should hide 2 user gems, show only 3 default gems
+    await page.uncheck("#gems-show-user");
+    await expect(page.locator(".gem-item")).toHaveCount(3);
+    await expect(page.locator(".gem-badge-default")).toHaveCount(3);
+  });
+
+  test("gem filter unchecking both shows empty state", async ({ page }) => {
+    await page.locator(".version-actions .btn-ghost >> text=Gems").first().click();
+    await page.uncheck("#gems-show-default");
+    await page.uncheck("#gems-show-user");
+    await expect(page.locator(".gem-item")).toHaveCount(0);
+    await expect(page.locator("#gems-list")).toContainText("No gems match");
   });
 
   test("gem filter checkboxes visible", async ({ page }) => {

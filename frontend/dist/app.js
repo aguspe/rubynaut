@@ -1070,9 +1070,9 @@ async function removeGem(gemName) {
 }
 
 function filterGems() {
-  const search = document.getElementById('gems-search').value.toLowerCase();
-  const showDefault = document.getElementById('gems-show-default').checked;
-  const showUser = document.getElementById('gems-show-user').checked;
+  const search = document.getElementById('gems-search')?.value.toLowerCase() || '';
+  const showDefault = document.getElementById('gems-show-default')?.checked ?? true;
+  const showUser = document.getElementById('gems-show-user')?.checked ?? true;
 
   const filtered = currentGemsData.filter(gem => {
     const matchesSearch = gem.name.toLowerCase().includes(search) || gem.version.includes(search);
@@ -1080,10 +1080,28 @@ function filterGems() {
     return matchesSearch && matchesType;
   });
 
-  renderGems(filtered);
-}
+  // Re-render the gems list inside the current panel
+  const gemsList = document.getElementById('gems-list');
+  if (!gemsList) return;
 
-// renderGems is now handled by renderInlineGems inside the version block
+  if (filtered.length === 0) {
+    gemsList.innerHTML = '<div class="empty-state" style="grid-column:1/-1;padding:24px"><p>No gems match your filter</p></div>';
+    return;
+  }
+
+  gemsList.innerHTML = filtered.map(gem => `
+    <div class="gem-item">
+      <div>
+        <span class="gem-name">${escapeHtml(gem.name)}</span>
+        <span class="${gem.is_default ? 'gem-badge-default' : 'gem-badge-user'}">${gem.is_default ? 'default' : 'user'}</span>
+      </div>
+      <div class="gem-right">
+        <span class="gem-version">${escapeHtml(gem.version)}</span>
+        ${!gem.is_default ? `<button class="gem-remove-btn" data-action="remove-gem" data-gem="${escapeHtml(gem.name)}" title="Uninstall">&#10005;</button>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
 
 // ============================================
 // Info Popups

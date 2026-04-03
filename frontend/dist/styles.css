@@ -536,8 +536,8 @@ body {
 
 .gems-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 6px;
   max-height: 400px;
   overflow-y: auto;
 }
@@ -549,7 +549,13 @@ body {
   background: var(--slate-900);
   border: 1px solid var(--slate-700);
   border-radius: var(--radius);
-  padding: 10px 14px;
+  padding: 8px 12px;
+  min-width: 0;
+}
+
+.gem-item > div:first-child {
+  min-width: 0;
+  overflow: hidden;
 }
 
 .gem-item:hover {
@@ -561,6 +567,9 @@ body {
   font-weight: 600;
   color: var(--slate-200);
   font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gem-version {
