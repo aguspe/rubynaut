@@ -66,6 +66,20 @@ enum Commands {
     },
     /// Show platform information
     Platform,
+    /// Run a command with a specific Ruby version's environment
+    Exec {
+        /// Ruby version to use
+        version: String,
+        /// Command and arguments to run
+        #[arg(trailing_var_arg = true, required = true)]
+        command: Vec<String>,
+    },
+    /// Show the path to a command's executable for the active Ruby
+    Which {
+        /// Command name (e.g. ruby, gem, bundle)
+        #[arg(default_value = "ruby")]
+        command: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -157,6 +171,8 @@ async fn main() {
         },
         Commands::Bundle { path } => commands::bundle(path).await,
         Commands::Platform => commands::platform(),
+        Commands::Exec { version, command } => commands::exec(version, command),
+        Commands::Which { command } => commands::which_cmd(command),
     };
 
     if let Err(e) = result {

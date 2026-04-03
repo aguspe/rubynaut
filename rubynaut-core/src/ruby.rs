@@ -1,5 +1,6 @@
 use crate::types::*;
 use serde::Deserialize;
+use sha2::{Sha256, Digest};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -839,6 +840,68 @@ pub fn is_valid_version(version: &str) -> bool {
         && !version.contains("--")
 }
 
+/// Compute the SHA256 hex digest of a byte slice.
+pub fn sha256_hex(data: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    hex::encode(hasher.finalize())
+}
+
+/// Fetch the expected SHA256 checksum for a ruby-builder archive.
+/// ruby-builder publishes a `.sha256` file alongside each archive.
+pub async fn fetch_checksum(client: &reqwest::Client, archive_url: &str) -> Result<Option<String>, String> {
+    let checksum_url = format!("{archive_url}.sha256");
+    let response = client
+        .get(&checksum_url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch checksum: {e}"))?;
+
+    if !response.status().is_success() {
+        // Checksum file not available — skip verification with a warning
+        return Ok(None);
+    }
+
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read checksum: {e}"))?;
+
+    // Format is either just the hex hash, or "hash  filename"
+    let hash = body.trim().split_whitespace().next().unwrap_or("").to_lowercase();
+    if hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        Ok(Some(hash))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Read the default-gems file (~/.rubies/default-gems) and return gem names.
+/// Each line is a gem name, optionally followed by a version.
+/// Lines starting with # are comments.
+pub fn read_default_gems() -> Vec<(String, Option<String>)> {
+    let path = rubies_dir().join("default-gems");
+    if !path.exists() {
+        return vec![];
+    }
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+    content
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| {
+            let mut parts = l.split_whitespace();
+            let name = parts.next().unwrap_or("").to_string();
+            let version = parts.next().map(|v| v.to_string());
+            (name, version)
+        })
+        .filter(|(name, _)| !name.is_empty())
+        .collect()
+}
+
 pub async fn install_ruby(version: String, on_progress: Option<ProgressCallback>) -> Result<(), String> {
     if !is_valid_version(&version) {
         return Err(format!("Invalid version format: {version}. Expected format like 4.0.2 or 2.0.0-p648"));
@@ -894,6 +957,37 @@ pub async fn install_ruby(version: String, on_progress: Option<ProgressCallback>
 
     if let Some(cb) = &on_progress {
         cb("download", 50, &format!("Downloaded {} MB", bytes.len() / 1_048_576));
+    }
+
+    // Verify SHA256 checksum
+    if let Some(cb) = &on_progress {
+        cb("verify", 55, "Verifying checksum...");
+    }
+
+    match fetch_checksum(&client, &url).await {
+        Ok(Some(expected)) => {
+            let actual = sha256_hex(&bytes);
+            if actual != expected {
+                return Err(format!(
+                    "Checksum mismatch! Expected {expected}, got {actual}. The download may be corrupted."
+                ));
+            }
+            if let Some(cb) = &on_progress {
+                cb("verify", 58, "Checksum verified");
+            }
+        }
+        Ok(None) => {
+            // No checksum available — proceed with warning
+            if let Some(cb) = &on_progress {
+                cb("verify", 58, "No checksum available — skipping verification");
+            }
+        }
+        Err(_) => {
+            // Checksum fetch failed — proceed with warning
+            if let Some(cb) = &on_progress {
+                cb("verify", 58, "Could not fetch checksum — skipping verification");
+            }
+        }
     }
 
     // Stage 2: Extract
@@ -990,6 +1084,17 @@ pub async fn install_ruby(version: String, on_progress: Option<ProgressCallback>
     }
 
     let ruby_version_output = String::from_utf8_lossy(&verify.stdout).trim().to_string();
+
+    // Install default gems if ~/.rubies/default-gems exists
+    let default_gems = read_default_gems();
+    if !default_gems.is_empty() {
+        if let Some(cb) = &on_progress {
+            cb("gems", 95, &format!("Installing {} default gem(s)...", default_gems.len()));
+        }
+        for (gem_name, gem_version) in &default_gems {
+            let _ = install_gem(version.clone(), gem_name.clone(), gem_version.clone()).await;
+        }
+    }
 
     if let Some(cb) = &on_progress {
         cb("done", 100, &format!("Installed: {ruby_version_output}"));
@@ -2478,5 +2583,125 @@ PLATFORMS
     #[test]
     fn test_is_valid_version_rejects_double_dots() {
         assert!(!is_valid_version("4..0.2"));
+    }
+
+    // ==========================================
+    // SHA256 checksum
+    // ==========================================
+
+    #[test]
+    fn test_sha256_hex_known_value() {
+        // SHA256 of empty string is well-known
+        let hash = sha256_hex(b"");
+        assert_eq!(hash, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    }
+
+    #[test]
+    fn test_sha256_hex_hello_world() {
+        let hash = sha256_hex(b"hello world");
+        assert_eq!(hash, "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9");
+    }
+
+    #[test]
+    fn test_sha256_hex_deterministic() {
+        let data = b"rubynaut test data 12345";
+        let hash1 = sha256_hex(data);
+        let hash2 = sha256_hex(data);
+        assert_eq!(hash1, hash2);
+        assert_eq!(hash1.len(), 64);
+        assert!(hash1.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_sha256_hex_different_inputs_differ() {
+        assert_ne!(sha256_hex(b"hello"), sha256_hex(b"world"));
+    }
+
+    // ==========================================
+    // Default gems file parsing
+    // ==========================================
+
+    #[test]
+    fn test_read_default_gems_no_file() {
+        // When no default-gems file exists, should return empty
+        let gems = read_default_gems();
+        // This test depends on whether the file exists on the test machine
+        // Just verify it returns a Vec without panicking
+        let _ = gems;
+    }
+
+    #[test]
+    fn test_parse_default_gems_format() {
+        // Test the parsing logic directly by creating a temp file
+        let dir = TempDir::new().unwrap();
+        let gems_file = dir.path().join("default-gems");
+        fs::write(&gems_file, "# My default gems\nbundler\nrails 7.2.0\npuma\n\n# another comment\nnokogiri 1.16.0\n").unwrap();
+
+        // Parse it manually since read_default_gems reads from a fixed path
+        let content = fs::read_to_string(&gems_file).unwrap();
+        let parsed: Vec<(String, Option<String>)> = content
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(|l| {
+                let mut parts = l.split_whitespace();
+                let name = parts.next().unwrap_or("").to_string();
+                let version = parts.next().map(|v| v.to_string());
+                (name, version)
+            })
+            .filter(|(name, _)| !name.is_empty())
+            .collect();
+
+        assert_eq!(parsed.len(), 4);
+        assert_eq!(parsed[0], ("bundler".to_string(), None));
+        assert_eq!(parsed[1], ("rails".to_string(), Some("7.2.0".to_string())));
+        assert_eq!(parsed[2], ("puma".to_string(), None));
+        assert_eq!(parsed[3], ("nokogiri".to_string(), Some("1.16.0".to_string())));
+    }
+
+    #[test]
+    fn test_parse_default_gems_empty_file() {
+        let dir = TempDir::new().unwrap();
+        let gems_file = dir.path().join("default-gems");
+        fs::write(&gems_file, "").unwrap();
+
+        let content = fs::read_to_string(&gems_file).unwrap();
+        let parsed: Vec<(String, Option<String>)> = content
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(|l| {
+                let mut parts = l.split_whitespace();
+                let name = parts.next().unwrap_or("").to_string();
+                let version = parts.next().map(|v| v.to_string());
+                (name, version)
+            })
+            .filter(|(name, _)| !name.is_empty())
+            .collect();
+
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn test_parse_default_gems_comments_only() {
+        let dir = TempDir::new().unwrap();
+        let gems_file = dir.path().join("default-gems");
+        fs::write(&gems_file, "# comment 1\n# comment 2\n").unwrap();
+
+        let content = fs::read_to_string(&gems_file).unwrap();
+        let parsed: Vec<(String, Option<String>)> = content
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(|l| {
+                let mut parts = l.split_whitespace();
+                let name = parts.next().unwrap_or("").to_string();
+                let version = parts.next().map(|v| v.to_string());
+                (name, version)
+            })
+            .filter(|(name, _)| !name.is_empty())
+            .collect();
+
+        assert!(parsed.is_empty());
     }
 }

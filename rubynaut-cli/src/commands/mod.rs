@@ -1,4 +1,5 @@
 use console::style;
+use dialoguer::Confirm;
 use indicatif::{ProgressBar, ProgressStyle};
 use rubynaut_core::{self, ProgressCallback};
 use std::sync::{Arc, Mutex};
@@ -32,6 +33,17 @@ pub async fn install(version: String) -> Result<(), String> {
 }
 
 pub fn uninstall(version: String) -> Result<(), String> {
+    let confirmed = Confirm::new()
+        .with_prompt(format!("Remove Ruby {} and all its gems? This cannot be undone", version))
+        .default(false)
+        .interact()
+        .map_err(|e| format!("Prompt failed: {e}"))?;
+
+    if !confirmed {
+        println!("{}", style("Cancelled").yellow());
+        return Ok(());
+    }
+
     rubynaut_core::uninstall_ruby(version.clone())?;
     println!(
         "{} Ruby {} removed",
@@ -448,4 +460,54 @@ fn resolve_path(path: &str) -> Result<String, String> {
             .join(p)
     };
     Ok(abs.to_string_lossy().to_string())
+}
+
+pub fn exec(version: String, command: Vec<String>) -> Result<(), String> {
+    let ruby_dir = rubynaut_core::rubies_dir().join(&version);
+    let ruby_bin = ruby_dir.join("bin").join("ruby");
+    if !ruby_bin.exists() {
+        return Err(format!("Ruby {version} is not installed"));
+    }
+
+    let env = rubynaut_core::gem_env(&ruby_dir, &version);
+
+    let program = &command[0];
+    let args = &command[1..];
+
+    let status = std::process::Command::new(program)
+        .args(args)
+        .envs(env)
+        .status()
+        .map_err(|e| format!("Failed to execute {program}: {e}"))?;
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+    Ok(())
+}
+
+pub fn which_cmd(command: String) -> Result<(), String> {
+    let active = rubynaut_core::get_active_version()?
+        .ok_or("No active Ruby version. Set one with: rubynaut use <version>")?;
+
+    let ruby_dir = rubynaut_core::rubies_dir().join(&active);
+    if !ruby_dir.exists() {
+        return Err(format!("Ruby {active} directory not found"));
+    }
+
+    // Check in the Ruby bin directory
+    let bin_path = ruby_dir.join("bin").join(&command);
+    if bin_path.exists() {
+        println!("{}", bin_path.display());
+        return Ok(());
+    }
+
+    // Check in the gems bin directory
+    let gems_bin = rubynaut_core::rubies_dir().join("gems").join(&active).join("bin").join(&command);
+    if gems_bin.exists() {
+        println!("{}", gems_bin.display());
+        return Ok(());
+    }
+
+    Err(format!("{command} not found for Ruby {active}"))
 }
