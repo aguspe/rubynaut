@@ -30,20 +30,28 @@ test.describe("Gem Management", () => {
     await expect(page.locator("#gem-install-btn")).toBeVisible();
   });
 
-  test("gem install button triggers install", async ({ page }) => {
+  test("gem install button triggers install and adds to list", async ({ page }) => {
     await page.locator(".version-actions .btn-ghost >> text=Gems").first().click();
+    const initialCount = await page.locator(".gem-item").count();
+
     await page.fill("#gem-install-input", "puma");
-    await page.click("#gem-install-btn");
-    // Should show success toast
+    await page.click("[data-action='install-gem']");
     await expect(page.locator(".toast-success")).toBeVisible({ timeout: 5000 });
+
+    // Gem should appear in the list
+    await expect(page.locator(".gem-item")).toHaveCount(initialCount + 1);
   });
 
-  test("gem install with version", async ({ page }) => {
+  test("gem install with version adds to list", async ({ page }) => {
     await page.locator(".version-actions .btn-ghost >> text=Gems").first().click();
-    await page.fill("#gem-install-input", "puma");
-    await page.fill("#gem-version-input", "6.4.0");
-    await page.click("#gem-install-btn");
+    const initialCount = await page.locator(".gem-item").count();
+
+    await page.fill("#gem-install-input", "sidekiq");
+    await page.fill("#gem-version-input", "7.0.0");
+    await page.click("[data-action='install-gem']");
     await expect(page.locator(".toast-success")).toBeVisible({ timeout: 5000 });
+
+    await expect(page.locator(".gem-item")).toHaveCount(initialCount + 1);
   });
 
   test("gem uninstall shows confirmation dialog", async ({ page }) => {

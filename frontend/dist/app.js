@@ -1040,13 +1040,21 @@ async function installGemFromInput() {
     showToast(`Installed ${displayName}`, 'success');
     input.value = '';
     versionInput.value = '';
-    // Refresh the inline gems panel
-    loadPanel(currentGemsVersion, 'gems');
+
+    // Optimistic update: add the gem to local data and re-render
+    if (!currentGemsData.find(g => g.name === gemName)) {
+      currentGemsData.push({ name: gemName, version: gemVersion || 'latest', is_default: false });
+      currentGemsData.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    }
+    const panel = document.getElementById(`panel-${currentGemsVersion}`);
+    if (panel) {
+      renderInlineGems(panel, currentGemsVersion, currentGemsData);
+    }
   } catch (e) {
     showToast(`Failed to install ${displayName}: ${e}`, 'error');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Install Gem';
+    btn.textContent = 'Install';
   }
 }
 
