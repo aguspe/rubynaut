@@ -1012,6 +1012,71 @@ function filterGems() {
 // renderGems is now handled by renderInlineGems inside the version block
 
 // ============================================
+// Info Popups
+// ============================================
+
+const INFO_CONTENT = {
+  dashboard: {
+    title: 'Dashboard',
+    body: 'The Dashboard shows an overview of your Ruby environment: how many versions are installed, which one is active, and quick access to gems and projects for each version. Use the <strong>Gems</strong> and <strong>Projects</strong> buttons on each version to expand inline panels. The <strong>Use</strong> dropdown lets you set a version as your global default or pin it to a specific project folder.'
+  },
+  install: {
+    title: 'Install Ruby',
+    body: 'Rubynaut installs pre-built Ruby binaries from the <strong>ruby-builder</strong> project (the same source GitHub Actions uses). Installation takes seconds instead of the 5-15 minutes needed to compile from source. Supported engines include <strong>CRuby</strong>, <strong>JRuby</strong>, and <strong>TruffleRuby</strong>. Each download is verified with a SHA256 checksum.'
+  },
+  projects: {
+    title: 'Project Tracking',
+    body: 'Open a project folder and Rubynaut will detect which Ruby version it needs by reading <strong>.ruby-version</strong>, <strong>.tool-versions</strong> (asdf/mise), or the <strong>Gemfile</strong> ruby constraint. If the required version isn\'t installed, you can install it with one click. Tracked projects appear in a list so you can see the status of all your Ruby projects at a glance.'
+  },
+  doctor: {
+    title: 'Environment Doctor',
+    body: 'Doctor runs 9 diagnostic checks on your system: <strong>rubies directory</strong>, <strong>installed versions</strong>, <strong>shell hook</strong>, <strong>PATH resolution</strong>, <strong>conflicting managers</strong> (rbenv, rvm, etc.), <strong>C compiler</strong>, and <strong>shared libraries</strong> (libyaml, OpenSSL, libffi, GMP). Items marked with an error have a <strong>Fix</strong> button that runs the appropriate install command for your platform.'
+  },
+  settings: {
+    title: 'Settings',
+    body: 'Configure your shell integration so Ruby versions switch automatically when you <code>cd</code> into a project. Rubynaut supports <strong>bash</strong>, <strong>zsh</strong>, <strong>fish</strong>, and <strong>PowerShell</strong>. You can also view the hook code to install it manually. The About section has links to the GitHub repository and issue tracker.'
+  }
+};
+
+function showInfoPopup(infoKey) {
+  const info = INFO_CONTENT[infoKey];
+  if (!info) return;
+
+  // Remove any existing popup
+  closeInfoPopup();
+
+  const popup = document.createElement('div');
+  popup.className = 'info-popup-overlay';
+  popup.innerHTML = `
+    <div class="info-popup">
+      <div class="info-popup-header">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <h3>${escapeHtml(info.title)}</h3>
+        <button class="info-popup-close" data-action="close-info">&times;</button>
+      </div>
+      <div class="info-popup-body">${info.body}</div>
+    </div>
+  `;
+  document.body.appendChild(popup);
+
+  // Close on overlay click
+  popup.addEventListener('click', (e) => {
+    if (e.target === popup) closeInfoPopup();
+  });
+}
+
+function closeInfoPopup() {
+  const existing = document.querySelector('.info-popup-overlay');
+  if (existing) existing.remove();
+}
+
+function triggerWizard() {
+  // Reset wizard flag and show it
+  invoke('set_wizard_completed').catch(() => {});
+  showWizard();
+}
+
+// ============================================
 // Getting Started Wizard
 // ============================================
 
@@ -1270,6 +1335,15 @@ async function init() {
         break;
       case 'wizard-complete':
         wizardComplete();
+        break;
+      case 'trigger-wizard':
+        triggerWizard();
+        break;
+      case 'show-info':
+        showInfoPopup(target.dataset.info);
+        break;
+      case 'close-info':
+        closeInfoPopup();
         break;
     }
   });

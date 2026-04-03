@@ -1642,3 +1642,136 @@ body {
   font-size: 14px;
   color: var(--slate-300);
 }
+
+/* ============================================
+   Tab Header Row with Info Icon
+   ============================================ */
+
+.tab-header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.info-icon {
+  background: none;
+  border: none;
+  color: var(--slate-500);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  transition: color 0.15s, background 0.15s;
+  display: flex;
+  align-items: center;
+}
+
+.info-icon:hover {
+  color: var(--slate-200);
+  background: var(--slate-700);
+}
+
+/* ============================================
+   Info Popup
+   ============================================ */
+
+.info-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.info-popup {
+  background: var(--slate-800);
+  border: 1px solid var(--slate-600);
+  border-radius: var(--radius-lg);
+  max-width: 480px;
+  width: 90%;
+  padding: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.info-popup-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  color: var(--slate-200);
+}
+
+.info-popup-header h3 {
+  flex: 1;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.info-popup-header svg {
+  color: var(--indigo-400, #818cf8);
+  flex-shrink: 0;
+}
+
+.info-popup-close {
+  background: none;
+  border: none;
+  color: var(--slate-400);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  border-radius: var(--radius);
+  transition: color 0.15s, background 0.15s;
+}
+
+.info-popup-close:hover {
+  color: var(--slate-100);
+  background: var(--slate-700);
+}
+
+.info-popup-body {
+  color: var(--slate-300);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.info-popup-body strong {
+  color: var(--slate-100);
+}
+
+.info-popup-body code {
+  background: var(--slate-900);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--green-400, #4ade80);
+}
+
+/* ============================================
+   Sidebar Wizard Button
+   ============================================ */
+
+.sidebar-wizard-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--slate-400);
+  border: 1px dashed var(--slate-600);
+  border-radius: var(--radius);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  justify-content: center;
+}
+
+.sidebar-wizard-btn:hover {
+  color: var(--slate-100);
+  border-color: var(--indigo-500, #6366f1);
+  background: rgba(99, 102, 241, 0.1);
+}
