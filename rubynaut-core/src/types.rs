@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RubyVersion {
@@ -29,6 +30,9 @@ pub struct RubynautConfig {
     /// Used for all network requests (downloads and API calls).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub http_proxy: Option<String>,
+    /// Version aliases (e.g. "4.0" → "4.0.2", "stable" → "4.0.2").
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub aliases: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize, Clone)]

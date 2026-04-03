@@ -36,16 +36,18 @@ pub async fn install(version: String, from_file: Option<String>) -> Result<(), S
     Ok(())
 }
 
-pub fn uninstall(version: String) -> Result<(), String> {
-    let confirmed = Confirm::new()
-        .with_prompt(format!("Remove Ruby {} and all its gems? This cannot be undone", version))
-        .default(false)
-        .interact()
-        .map_err(|e| format!("Prompt failed: {e}"))?;
+pub fn uninstall(version: String, yes: bool) -> Result<(), String> {
+    if !yes {
+        let confirmed = Confirm::new()
+            .with_prompt(format!("Remove Ruby {} and all its gems? This cannot be undone", version))
+            .default(false)
+            .interact()
+            .map_err(|e| format!("Prompt failed: {e}"))?;
 
-    if !confirmed {
-        println!("{}", style("Cancelled").yellow());
-        return Ok(());
+        if !confirmed {
+            println!("{}", style("Cancelled").yellow());
+            return Ok(());
+        }
     }
 
     rubynaut_core::uninstall_ruby(version.clone())?;
@@ -557,4 +559,89 @@ pub fn which_cmd(command: String) -> Result<(), String> {
     }
 
     Err(format!("{command} not found for Ruby {active}"))
+}
+
+pub fn alias_set(alias: String, version: String) -> Result<(), String> {
+    rubynaut_core::set_alias(alias.clone(), version.clone())?;
+    println!(
+        "{} Alias {} → {}",
+        style("done:").green().bold(),
+        style(&alias).cyan(),
+        style(&version).cyan()
+    );
+    Ok(())
+}
+
+pub fn alias_remove(alias: String) -> Result<(), String> {
+    rubynaut_core::remove_alias(alias.clone())?;
+    println!(
+        "{} Alias '{}' removed",
+        style("done:").green().bold(),
+        style(&alias).cyan()
+    );
+    Ok(())
+}
+
+pub fn alias_list() -> Result<(), String> {
+    let aliases = rubynaut_core::list_aliases();
+    if aliases.is_empty() {
+        println!("No aliases configured. Set one with: rubynaut alias set <name> <version>");
+        return Ok(());
+    }
+    println!("{}", style("Version Aliases:").bold());
+    let mut sorted: Vec<_> = aliases.iter().collect();
+    sorted.sort_by_key(|(k, _)| (*k).clone());
+    for (alias, version) in sorted {
+        println!(
+            "  {} → {}",
+            style(alias).cyan(),
+            style(version).white()
+        );
+    }
+    Ok(())
+}
+
+pub async fn update() -> Result<(), String> {
+    let current = env!("CARGO_PKG_VERSION");
+    let repo = "aguspe/rubynaut";
+
+    println!(
+        "{} Checking for updates (current: v{})...",
+        style("update:").green().bold(),
+        current
+    );
+
+    match rubynaut_core::check_for_update(current, repo).await? {
+        None => {
+            println!("{} Already up to date (v{})", style("done:").green().bold(), current);
+            Ok(())
+        }
+        Some((tag, download_url)) => {
+            println!(
+                "  New version available: {}",
+                style(&tag).cyan().bold()
+            );
+
+            if download_url.is_empty() {
+                println!("  No prebuilt binary for this platform. Please update manually.");
+                return Ok(());
+            }
+
+            let confirmed = Confirm::new()
+                .with_prompt(format!("Update to {tag}?"))
+                .default(true)
+                .interact()
+                .map_err(|e| format!("Prompt failed: {e}"))?;
+
+            if !confirmed {
+                println!("{}", style("Cancelled").yellow());
+                return Ok(());
+            }
+
+            println!("  Downloading...");
+            let result = rubynaut_core::self_update(&download_url).await?;
+            println!("{} {}", style("done:").green().bold(), result);
+            Ok(())
+        }
+    }
 }

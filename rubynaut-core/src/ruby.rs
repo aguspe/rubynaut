@@ -1,6 +1,7 @@
 use crate::types::*;
 use serde::Deserialize;
 use sha2::{Sha256, Digest};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -81,14 +82,19 @@ fn get_active_version_inner(config: &RubynautConfig) -> Option<String> {
                 if let Ok(v) = fs::read_to_string(&rv_file) {
                     let v = v.trim().to_string();
                     if !v.is_empty() {
-                        return Some(v);
+                        // Resolve through aliases
+                        let resolved = config.aliases.get(&v).cloned().unwrap_or(v);
+                        return Some(resolved);
                     }
                 }
             }
             dir = d.parent();
         }
     }
-    config.global_version.clone()
+    // Resolve global version through aliases too
+    config.global_version.as_ref().map(|v| {
+        config.aliases.get(v).cloned().unwrap_or_else(|| v.clone())
+    })
 }
 
 pub fn get_active_version() -> Result<Option<String>, String> {
@@ -902,6 +908,159 @@ pub fn download_base_url() -> String {
     config.mirror_url
         .filter(|u| !u.is_empty())
         .unwrap_or_else(|| "https://github.com/ruby/ruby-builder".to_string())
+}
+
+// ==========================================
+// Version Aliases
+// ==========================================
+
+/// Resolve a version string through aliases. If the version matches an alias,
+/// return the target version. Otherwise return the input unchanged.
+pub fn resolve_alias(version: &str) -> String {
+    let config = read_config();
+    config.aliases.get(version).cloned().unwrap_or_else(|| version.to_string())
+}
+
+/// Set a version alias (e.g. "4.0" → "4.0.2").
+pub fn set_alias(alias: String, version: String) -> Result<(), String> {
+    let mut config = read_config();
+    config.aliases.insert(alias, version);
+    write_config(&config)
+}
+
+/// Remove a version alias.
+pub fn remove_alias(alias: String) -> Result<(), String> {
+    let mut config = read_config();
+    if config.aliases.remove(&alias).is_none() {
+        return Err(format!("Alias '{alias}' does not exist"));
+    }
+    write_config(&config)
+}
+
+/// List all version aliases.
+pub fn list_aliases() -> HashMap<String, String> {
+    read_config().aliases
+}
+
+// ==========================================
+// Self-Update
+// ==========================================
+
+#[derive(Deserialize)]
+struct GitHubReleaseAsset {
+    name: String,
+    browser_download_url: String,
+}
+
+#[derive(Deserialize)]
+struct GitHubAppRelease {
+    tag_name: String,
+    assets: Vec<GitHubReleaseAsset>,
+}
+
+/// Check for a newer version of Rubynaut on GitHub.
+/// Returns (latest_tag, download_url) if a newer version is available.
+pub async fn check_for_update(current_version: &str, repo: &str) -> Result<Option<(String, String)>, String> {
+    let client = build_http_client()?;
+    let url = format!("https://api.github.com/repos/{repo}/releases/latest");
+
+    let response = client
+        .get(&url)
+        .header("User-Agent", "Rubynaut")
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to check for updates: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("GitHub API returned {}", response.status()));
+    }
+
+    let release: GitHubAppRelease = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse release: {e}"))?;
+
+    let latest = release.tag_name.trim_start_matches('v');
+    if version_cmp(latest, current_version) != std::cmp::Ordering::Greater {
+        return Ok(None); // Already up to date
+    }
+
+    // Find the matching binary for this platform
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+    let platform_patterns: Vec<&str> = match (os, arch) {
+        ("macos", "aarch64") => vec!["darwin-arm64", "macos-arm64", "aarch64-apple-darwin"],
+        ("macos", "x86_64") => vec!["darwin-x64", "macos-x64", "x86_64-apple-darwin"],
+        ("linux", "x86_64") => vec!["linux-x64", "linux-amd64", "x86_64-unknown-linux"],
+        ("linux", "aarch64") => vec!["linux-arm64", "aarch64-unknown-linux"],
+        ("windows", "x86_64") => vec!["windows-x64", "windows-amd64", ".exe"],
+        _ => vec![],
+    };
+
+    let asset = release.assets.iter().find(|a| {
+        let name = a.name.to_lowercase();
+        name.contains("rubynaut") && platform_patterns.iter().any(|p| name.contains(p))
+    });
+
+    match asset {
+        Some(a) => Ok(Some((release.tag_name, a.browser_download_url.clone()))),
+        None => Ok(Some((release.tag_name, String::new()))), // Newer version exists but no matching binary
+    }
+}
+
+/// Download and replace the current binary with a newer version.
+pub async fn self_update(download_url: &str) -> Result<String, String> {
+    if download_url.is_empty() {
+        return Err("No download URL available for this platform. Please update manually.".to_string());
+    }
+
+    let client = build_http_client()?;
+    let response = client
+        .get(download_url)
+        .send()
+        .await
+        .map_err(|e| format!("Download failed: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Download failed: HTTP {}", response.status()));
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read download: {e}"))?;
+
+    // Get the path of the current executable
+    let current_exe = std::env::current_exe()
+        .map_err(|e| format!("Cannot determine current executable path: {e}"))?;
+
+    // Write to a temp file next to the current binary, then rename
+    let tmp_path = current_exe.with_extension("update-tmp");
+    fs::write(&tmp_path, &bytes)
+        .map_err(|e| format!("Failed to write update: {e}"))?;
+
+    // Make executable on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o755));
+    }
+
+    // Replace old binary
+    let backup_path = current_exe.with_extension("old");
+    let _ = fs::remove_file(&backup_path);
+    fs::rename(&current_exe, &backup_path)
+        .map_err(|e| format!("Failed to backup current binary: {e}"))?;
+    fs::rename(&tmp_path, &current_exe)
+        .map_err(|e| {
+            // Try to restore backup
+            let _ = fs::rename(&backup_path, &current_exe);
+            format!("Failed to install update: {e}")
+        })?;
+    let _ = fs::remove_file(&backup_path);
+
+    Ok("Update installed successfully. Restart to use the new version.".to_string())
 }
 
 /// Install a Ruby version from a local .tar.gz archive file.
@@ -3066,6 +3225,7 @@ PLATFORMS
             projects: vec![],
             mirror_url: Some("https://mirror.example.com".to_string()),
             http_proxy: None,
+            ..Default::default()
         };
         let json = serde_json::to_string(&config).unwrap();
         let parsed: RubynautConfig = serde_json::from_str(&json).unwrap();
@@ -3091,5 +3251,79 @@ PLATFORMS
         let hook = generate_fish_hook("/home/user/.rubies");
         assert!(hook.contains("Install it now?"));
         assert!(hook.contains("rubynaut install"));
+    }
+
+    // ==========================================
+    // Version aliases
+    // ==========================================
+
+    #[test]
+    fn test_resolve_alias_no_aliases() {
+        // With default config (no aliases), resolves to same version
+        let result = resolve_alias("4.0.2");
+        assert_eq!(result, "4.0.2");
+    }
+
+    #[test]
+    fn test_list_aliases_returns_map() {
+        let aliases = list_aliases();
+        // Just verify it returns without panicking
+        let _ = aliases;
+    }
+
+    #[test]
+    fn test_config_with_aliases_serialization() {
+        let mut aliases = HashMap::new();
+        aliases.insert("4.0".to_string(), "4.0.2".to_string());
+        aliases.insert("stable".to_string(), "4.0.2".to_string());
+
+        let config = RubynautConfig {
+            global_version: Some("4.0.2".to_string()),
+            projects: vec![],
+            aliases,
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("aliases"));
+        assert!(json.contains("stable"));
+
+        let parsed: RubynautConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.aliases.len(), 2);
+        assert_eq!(parsed.aliases.get("4.0"), Some(&"4.0.2".to_string()));
+        assert_eq!(parsed.aliases.get("stable"), Some(&"4.0.2".to_string()));
+    }
+
+    #[test]
+    fn test_config_without_aliases_defaults_empty() {
+        let json = r#"{"global_version": "4.0.2"}"#;
+        let config: RubynautConfig = serde_json::from_str(json).unwrap();
+        assert!(config.aliases.is_empty());
+    }
+
+    #[test]
+    fn test_config_aliases_skipped_when_empty() {
+        let config = RubynautConfig {
+            global_version: Some("4.0.2".to_string()),
+            projects: vec![],
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        // Empty aliases should not appear in serialized JSON
+        assert!(!json.contains("aliases"));
+    }
+
+    // ==========================================
+    // Self-update version comparison
+    // ==========================================
+
+    #[test]
+    fn test_version_cmp_for_update_check() {
+        // Newer version
+        assert_eq!(version_cmp("0.2.0", "0.1.0"), std::cmp::Ordering::Greater);
+        // Same version
+        assert_eq!(version_cmp("0.1.0", "0.1.0"), std::cmp::Ordering::Equal);
+        // Older version
+        assert_eq!(version_cmp("0.0.9", "0.1.0"), std::cmp::Ordering::Less);
     }
 }

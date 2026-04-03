@@ -29,6 +29,9 @@ enum Commands {
     Uninstall {
         /// Ruby version to remove
         version: String,
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        yes: bool,
     },
     /// List Ruby versions
     List {
@@ -86,6 +89,11 @@ enum Commands {
     /// Configure Rubynaut settings
     #[command(subcommand)]
     Config(ConfigCommands),
+    /// Manage version aliases (e.g. "4.0" → "4.0.2")
+    #[command(subcommand)]
+    Alias(AliasCommands),
+    /// Check for and install Rubynaut updates
+    Update,
 }
 
 #[derive(Subcommand)]
@@ -106,6 +114,24 @@ enum ConfigCommands {
     ClearProxy,
     /// Show current configuration
     Show,
+}
+
+#[derive(Subcommand)]
+enum AliasCommands {
+    /// Set a version alias
+    Set {
+        /// Alias name (e.g. "4.0", "stable", "default")
+        alias: String,
+        /// Target version (e.g. "4.0.2")
+        version: String,
+    },
+    /// Remove a version alias
+    Remove {
+        /// Alias name to remove
+        alias: String,
+    },
+    /// List all aliases
+    List,
 }
 
 #[derive(Subcommand)]
@@ -174,7 +200,7 @@ async fn main() {
 
     let result = match cli.command {
         Commands::Install { version, from_file } => commands::install(version, from_file).await,
-        Commands::Uninstall { version } => commands::uninstall(version),
+        Commands::Uninstall { version, yes } => commands::uninstall(version, yes),
         Commands::List { available } => commands::list(available).await,
         Commands::Use { version, local } => commands::use_version(version, local),
         Commands::Current => commands::current(),
@@ -206,6 +232,12 @@ async fn main() {
             ConfigCommands::ClearProxy => commands::config_clear_proxy(),
             ConfigCommands::Show => commands::config_show(),
         },
+        Commands::Alias(sub) => match sub {
+            AliasCommands::Set { alias, version } => commands::alias_set(alias, version),
+            AliasCommands::Remove { alias } => commands::alias_remove(alias),
+            AliasCommands::List => commands::alias_list(),
+        },
+        Commands::Update => commands::update().await,
     };
 
     if let Err(e) = result {
