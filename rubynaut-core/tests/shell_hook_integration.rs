@@ -41,23 +41,25 @@ fn test_install_shell_hook_bash_creates_hook() {
 fn test_install_shell_hook_fish_creates_file() {
     let home = TempDir::new().unwrap();
     std::env::set_var("HOME", home.path());
+    // On Linux, dirs::config_dir() uses XDG_CONFIG_HOME
+    #[cfg(target_os = "linux")]
+    std::env::set_var("XDG_CONFIG_HOME", home.path().join(".config"));
 
     let result = rubynaut_core::install_shell_hook("fish".to_string());
     assert!(result.is_ok(), "install_shell_hook(fish) failed: {:?}", result.err());
 
-    // Fish hook goes to config dir — check the result message for the actual path
     let msg = result.unwrap();
     assert!(msg.contains("rubynaut.fish"), "Result should mention rubynaut.fish: {msg}");
 
-    // Find the actual file — it could be in XDG_CONFIG_HOME, ~/.config, or Library/Application Support
-    let possible_paths = vec![
-        home.path().join(".config/fish/conf.d/rubynaut.fish"),
-        home.path().join("Library/Application Support/fish/conf.d/rubynaut.fish"),
-    ];
-    let found = possible_paths.iter().find(|p| p.exists());
-    assert!(found.is_some(), "rubynaut.fish should exist in one of: {:?}", possible_paths);
+    // The hook path depends on platform:
+    // Linux: $XDG_CONFIG_HOME/fish/conf.d/rubynaut.fish (or $HOME/.config/...)
+    // macOS: $HOME/Library/Application Support/fish/conf.d/rubynaut.fish
+    // Extract the path from the success message
+    let hook_path = msg.strip_prefix("Hook installed to ").unwrap_or(&msg);
+    let hook_file = std::path::Path::new(hook_path.trim());
+    assert!(hook_file.exists(), "rubynaut.fish should exist at {:?}", hook_file);
 
-    let content = fs::read_to_string(found.unwrap()).unwrap();
+    let content = fs::read_to_string(hook_file).unwrap();
     assert!(content.contains("rubynaut_switch"));
     assert!(content.contains("--on-variable PWD"));
 }
