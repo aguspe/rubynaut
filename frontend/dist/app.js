@@ -1265,14 +1265,37 @@ function renderWizardStep(step) {
 
 async function setupWizardInstallStep() {
   const statusEl = document.getElementById('wizard-install-version');
+  const installBtn = document.getElementById('wizard-install-btn');
   statusEl.textContent = 'Detecting latest version...';
   try {
     wizardVersion = await invoke('get_latest_stable_version');
-    statusEl.textContent = `Ruby ${wizardVersion} (latest stable)`;
   } catch (e) {
     wizardVersion = '4.0.2';
-    statusEl.textContent = `Ruby ${wizardVersion} (fallback)`;
   }
+
+  // Check if already installed
+  try {
+    const installed = await invoke('get_installed_rubies');
+    const alreadyInstalled = installed.some(r => r.version === wizardVersion);
+    if (alreadyInstalled) {
+      statusEl.textContent = `Ruby ${wizardVersion} is already installed`;
+      statusEl.classList.add('success');
+      // Set as global and skip to step 3
+      await invoke('set_global_version', { version: wizardVersion });
+      installBtn.textContent = 'Already Installed';
+      installBtn.disabled = true;
+      // Auto-advance after a brief pause so the user sees the message
+      setTimeout(() => renderWizardStep(3), 800);
+      return;
+    }
+  } catch (e) {
+    // Could not check — proceed with install button
+  }
+
+  statusEl.textContent = `Ruby ${wizardVersion} (latest stable)`;
+  statusEl.classList.remove('success');
+  installBtn.textContent = 'Install';
+  installBtn.disabled = false;
 }
 
 async function wizardInstallRuby() {
