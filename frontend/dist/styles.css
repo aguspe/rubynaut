@@ -325,6 +325,11 @@ body {
   background: var(--slate-700);
   color: var(--slate-300);
 }
+.badge-warning {
+  background: #92400e;
+  color: #fde68a;
+  border: 1px solid #b45309;
+}
 
 .version-actions {
   display: flex;

@@ -151,6 +151,7 @@ async function refreshDashboard() {
             <div class="version-badges">
               ${ruby.active ? '<span class="version-badge badge-active">Active</span>' : ''}
               ${ruby.version === active ? '<span class="version-badge badge-global">Global</span>' : ''}
+              ${ruby.healthy === false ? '<span class="version-badge badge-warning" title="RubyGems cannot load — try reinstalling this version">Unhealthy</span>' : ''}
             </div>
           </div>
           <div class="version-actions">

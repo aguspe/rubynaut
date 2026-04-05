@@ -58,12 +58,26 @@ pub fn get_installed_rubies() -> Result<Vec<RubyVersion>, String> {
         let ruby_bin = entry.path().join("bin").join("ruby");
         if ruby_bin.exists() {
             let is_active = active_version.as_deref() == Some(name.as_str());
+
+            // Quick health check: can this Ruby load rubygems?
+            let env_vars = gem_env(&entry.path(), &name);
+            let healthy = Command::new(&ruby_bin)
+                .arg("-e")
+                .arg("require 'rubygems'")
+                .envs(env_vars.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+
             versions.push(RubyVersion {
                 version: name.clone(),
                 installed: true,
                 active: is_active,
                 path: Some(entry.path().to_string_lossy().to_string()),
                 prebuilt_available: false,
+                healthy,
             });
         }
     }
@@ -830,6 +844,7 @@ pub async fn get_available_rubies() -> Result<Vec<RubyVersion>, String> {
                     None
                 },
                 prebuilt_available: true,
+                healthy: true,
             }
         })
         .collect();
@@ -1544,6 +1559,22 @@ pub async fn install_ruby(version: String, on_progress: Option<ProgressCallback>
             return Err(format!("Ruby binary failed verification: {stderr}"));
         }
 
+        // Verify RubyGems loads correctly (catches hardcoded load-path issues)
+        let env_vars = gem_env(&target_dir, &version);
+        let rubygems_check = Command::new(&ruby_bin)
+            .arg("-e")
+            .arg("require 'rubygems'; puts Gem::VERSION")
+            .envs(env_vars.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+            .output()
+            .map_err(|e| format!("RubyGems verification failed: {e}"))?;
+
+        if !rubygems_check.status.success() {
+            let stderr = String::from_utf8_lossy(&rubygems_check.stderr);
+            return Err(format!(
+                "Ruby installed but RubyGems failed to load (hardcoded load paths may need fixing): {stderr}"
+            ));
+        }
+
         Ok(String::from_utf8_lossy(&verify.stdout).trim().to_string())
     })();
 
@@ -1890,7 +1921,7 @@ rubynaut_switch() {{
 
   if [ -n "$RUBYNAUT_VERSION" ]; then
     PATH=$(echo "$PATH" | tr ':' '\n' | grep -v "{rubies_path}" | tr '\n' ':' | sed 's/:$//')
-    unset GEM_HOME GEM_PATH RUBYNAUT_VERSION
+    unset GEM_HOME GEM_PATH RUBYLIB RUBYNAUT_VERSION
   fi
 
   if [ -n "$target_version" ] && [ -d "{rubies_path}/$target_version/bin" ]; then
@@ -1898,6 +1929,24 @@ rubynaut_switch() {{
     export GEM_HOME="{rubies_path}/gems/$target_version"
     export GEM_PATH="$GEM_HOME:{rubies_path}/$target_version/lib/ruby/gems/${{target_version%.*}}.0"
     export PATH="{rubies_path}/$target_version/bin:$GEM_HOME/bin:$PATH"
+    # Build RUBYLIB to fix hardcoded load paths in prebuilt ruby-builder binaries
+    local ruby_lib_dir="{rubies_path}/$target_version/lib/ruby"
+    local rubylib_parts=""
+    if [ -d "$ruby_lib_dir" ]; then
+      for vdir in "$ruby_lib_dir"/[0-9]*; do
+        [ -d "$vdir" ] || continue
+        rubylib_parts="${{rubylib_parts:+$rubylib_parts:}}$vdir"
+        for archdir in "$vdir"/*/; do
+          case "$(basename "$archdir")" in
+            *darwin*|*linux*|*x86*|*arm*) rubylib_parts="${{rubylib_parts:+$rubylib_parts:}}${{archdir%/}}" ;;
+          esac
+        done
+      done
+      for special in site_ruby vendor_ruby; do
+        [ -d "$ruby_lib_dir/$special" ] && rubylib_parts="${{rubylib_parts:+$rubylib_parts:}}$ruby_lib_dir/$special"
+      done
+    fi
+    [ -n "$rubylib_parts" ] && export RUBYLIB="$rubylib_parts"
     # Ensure Homebrew libraries (libyaml, openssl, etc.) are findable
     if [ -d /opt/homebrew/lib ]; then
       export DYLD_FALLBACK_LIBRARY_PATH="{rubies_path}/$target_version/lib:/opt/homebrew/lib:${{DYLD_FALLBACK_LIBRARY_PATH:-/usr/local/lib:/usr/lib}}"
@@ -1958,6 +2007,7 @@ function rubynaut_switch --on-variable PWD
     set PATH (string match -v "*{rubies_path}*" $PATH)
     set -e GEM_HOME
     set -e GEM_PATH
+    set -e RUBYLIB
     set -e RUBYNAUT_VERSION
   end
 
@@ -1966,6 +2016,27 @@ function rubynaut_switch --on-variable PWD
     set -gx GEM_HOME "{rubies_path}/gems/$target_version"
     set -gx GEM_PATH "$GEM_HOME:{rubies_path}/$target_version/lib/ruby/gems/"(string replace -r '\.\d+$' '.0' $target_version)
     set -gx PATH "{rubies_path}/$target_version/bin" "$GEM_HOME/bin" $PATH
+    # Build RUBYLIB to fix hardcoded load paths in prebuilt ruby-builder binaries
+    set -l ruby_lib_dir "{rubies_path}/$target_version/lib/ruby"
+    set -l rubylib_parts
+    if test -d "$ruby_lib_dir"
+      for vdir in $ruby_lib_dir/[0-9]*
+        test -d "$vdir"; or continue
+        set -a rubylib_parts "$vdir"
+        for archdir in $vdir/*/
+          set -l bname (basename "$archdir")
+          if string match -q '*darwin*' "$bname"; or string match -q '*linux*' "$bname"; or string match -q '*x86*' "$bname"; or string match -q '*arm*' "$bname"
+            set -a rubylib_parts (string trim -r -c / "$archdir")
+          end
+        end
+      end
+      for special in site_ruby vendor_ruby
+        test -d "$ruby_lib_dir/$special"; and set -a rubylib_parts "$ruby_lib_dir/$special"
+      end
+    end
+    if test (count $rubylib_parts) -gt 0
+      set -gx RUBYLIB (string join ":" $rubylib_parts)
+    end
   else if test -n "$target_version"; and not test -d "{rubies_path}/$target_version/bin"
     # Auto-install: version required but not installed
     if command -v rubynaut >/dev/null 2>&1
@@ -2016,6 +2087,7 @@ function Invoke-RubynautSwitch {{
 
   if ($env:RUBYNAUT_VERSION) {{
     $env:PATH = ($env:PATH -split [IO.Path]::PathSeparator | Where-Object {{ $_ -notlike "*{rubies_path}*" }}) -join [IO.Path]::PathSeparator
+    $env:RUBYLIB = $null
   }}
 
   $rubyBin = Join-Path "{rubies_path}" "$targetVersion/bin"
@@ -2023,6 +2095,24 @@ function Invoke-RubynautSwitch {{
     $env:RUBYNAUT_VERSION = $targetVersion
     $env:GEM_HOME = "{rubies_path}/gems/$targetVersion"
     $env:PATH = "$rubyBin$([IO.Path]::PathSeparator)$env:GEM_HOME/bin$([IO.Path]::PathSeparator)$env:PATH"
+    # Build RUBYLIB to fix hardcoded load paths in prebuilt ruby-builder binaries
+    $rubyLibDir = Join-Path "{rubies_path}" "$targetVersion/lib/ruby"
+    $rubylibParts = @()
+    if (Test-Path $rubyLibDir) {{
+      Get-ChildItem -Directory $rubyLibDir | Where-Object {{ $_.Name -match '^\d' }} | ForEach-Object {{
+        $rubylibParts += $_.FullName
+        Get-ChildItem -Directory $_.FullName | Where-Object {{ $_.Name -match 'darwin|linux|x86|arm' }} | ForEach-Object {{
+          $rubylibParts += $_.FullName
+        }}
+      }}
+      foreach ($special in @("site_ruby", "vendor_ruby")) {{
+        $sp = Join-Path $rubyLibDir $special
+        if (Test-Path $sp) {{ $rubylibParts += $sp }}
+      }}
+    }}
+    if ($rubylibParts.Count -gt 0) {{
+      $env:RUBYLIB = $rubylibParts -join [IO.Path]::PathSeparator
+    }}
   }}
 }}
 
@@ -2310,6 +2400,7 @@ DEPENDENCIES
         assert!(hook.contains("rubynaut_switch"));
         assert!(hook.contains("chpwd_functions"));
         assert!(hook.contains(".rubies"));
+        assert!(hook.contains("RUBYLIB"), "Posix hook should set RUBYLIB");
     }
 
     #[test]
@@ -2319,6 +2410,7 @@ DEPENDENCIES
         let hook = result.unwrap();
         assert!(hook.contains("rubynaut_switch"));
         assert!(hook.contains("builtin cd"));
+        assert!(hook.contains("RUBYLIB"), "Posix hook should set RUBYLIB");
     }
 
     #[test]
@@ -2328,6 +2420,8 @@ DEPENDENCIES
         let hook = result.unwrap();
         assert!(hook.contains("rubynaut_switch"));
         assert!(hook.contains("--on-variable PWD"));
+        assert!(hook.contains("RUBYLIB"), "Fish hook should set RUBYLIB");
+        assert!(hook.contains("set -e RUBYLIB"), "Fish hook should unset RUBYLIB on deactivation");
     }
 
     #[test]
@@ -2336,6 +2430,23 @@ DEPENDENCIES
         assert!(result.is_ok());
         let hook = result.unwrap();
         assert!(hook.contains("Invoke-RubynautSwitch"));
+        assert!(hook.contains("RUBYLIB"), "PowerShell hook should set RUBYLIB");
+    }
+
+    #[test]
+    fn test_posix_hook_unsets_rubylib() {
+        let hook = generate_posix_hook("/home/user/.rubies");
+        assert!(hook.contains("unset GEM_HOME GEM_PATH RUBYLIB RUBYNAUT_VERSION"));
+    }
+
+    #[test]
+    fn test_posix_hook_builds_rubylib_from_lib_ruby() {
+        let hook = generate_posix_hook("/home/user/.rubies");
+        assert!(hook.contains("ruby_lib_dir="));
+        assert!(hook.contains("rubylib_parts"));
+        assert!(hook.contains("export RUBYLIB"));
+        assert!(hook.contains("site_ruby"));
+        assert!(hook.contains("vendor_ruby"));
     }
 
     #[test]
@@ -2465,6 +2576,7 @@ DEPENDENCIES
             active: false,
             path: Some("/home/user/.rubies/3.3.6".to_string()),
             prebuilt_available: true,
+            healthy: true,
         };
         let json = serde_json::to_string(&rv).unwrap();
         assert!(json.contains("3.3.6"));

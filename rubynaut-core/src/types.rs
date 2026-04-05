@@ -8,6 +8,12 @@ pub struct RubyVersion {
     pub active: bool,
     pub path: Option<String>,
     pub prebuilt_available: bool,
+    #[serde(default = "default_healthy")]
+    pub healthy: bool,
+}
+
+fn default_healthy() -> bool {
+    true
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
